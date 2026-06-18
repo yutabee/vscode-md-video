@@ -100,11 +100,14 @@
     "build:preview": "esbuild src/webview/inject.ts --bundle --format=iife --outfile=dist/preview/inject.js",
     "build": "npm run compile && npm run build:preview",
     "watch": "tsc -watch -p ./",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "pretest": "tsc -p ./tsconfig.test.json",
+    "test": "node --test \"out-test/test/**/*.test.js\""
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
     "@types/markdown-it": "^14.1.2",
+    "markdown-it": "^14.1.0",
     "@types/node": "^25.9.3",
     "@types/vscode": "^1.90.0",
     "@vscode/vsce": "3.9.2",
