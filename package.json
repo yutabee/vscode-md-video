@@ -1,0 +1,117 @@
+{
+  "name": "markdown-video-audio",
+  "displayName": "Markdown Video Audio — play videos with sound in Markdown preview",
+  "description": "Play MP4/MOV videos embedded in the VS Code Markdown preview with sound. ffmpeg extracts the audio and keeps it in sync with the muted video, working around the missing AAC codec in the webview.",
+  "version": "0.0.1",
+  "publisher": "yutabee",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yutabee/vscode-md-video.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yutabee/vscode-md-video/issues"
+  },
+  "homepage": "https://github.com/yutabee/vscode-md-video#readme",
+  "qna": "https://github.com/yutabee/vscode-md-video/issues",
+  "pricing": "Free",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "MP4/MOV audio is extracted with ffmpeg only in trusted workspaces; videos stay muted until then. WebM plays with native audio."
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "Playback needs a real on-disk file path and a local ffmpeg."
+    }
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "markdown",
+    "markdown preview",
+    "video",
+    "sound",
+    "audio",
+    "mp4",
+    "mov",
+    "no sound",
+    "no audio",
+    "aac",
+    "ffmpeg",
+    "preview",
+    "video player",
+    "mute",
+    "unmute"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "markdown.previewScripts": [
+      "./dist/preview/inject.js"
+    ],
+    "markdown.previewStyles": [
+      "./dist/preview/inject.css"
+    ],
+    "markdown.markdownItPlugins": true,
+    "configuration": {
+      "title": "Markdown Video Audio",
+      "properties": {
+        "markdownVideoAudio.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable audio playback for videos in the Markdown preview."
+        },
+        "markdownVideoAudio.ffmpegPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the ffmpeg executable. Empty = search PATH."
+        },
+        "markdownVideoAudio.autoplay": {
+          "type": "boolean",
+          "default": false,
+          "description": "Autoplay videos when the preview opens (muted; audio resumes on first interaction)."
+        },
+        "markdownVideoAudio.maxSyncDriftMs": {
+          "type": "number",
+          "default": 250,
+          "minimum": 30,
+          "maximum": 2000,
+          "description": "Maximum allowed drift between audio and video before correction (ms)."
+        },
+        "markdownVideoAudio.cacheDirName": {
+          "type": "string",
+          "default": ".vscode-md-video-cache",
+          "description": "Directory name for extracted audio cache, created under the workspace (must be inside localResourceRoots)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "clean": "node -e \"const fs=require('fs');fs.rmSync('out',{recursive:true,force:true});fs.rmSync('dist',{recursive:true,force:true})\"",
+    "compile": "tsc -p ./",
+    "build:preview": "esbuild src/webview/inject.ts --bundle --format=iife --outfile=dist/preview/inject.js",
+    "build": "npm run compile && npm run build:preview",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^25.9.3",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "3.9.2",
+    "esbuild": "^0.28.1",
+    "eslint": "^10.5.0",
+    "ovsx": "1.0.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.1"
+  }
+}

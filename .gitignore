@@ -1,0 +1,12 @@
+node_modules/
+out/
+dist/
+*.vsix
+.DS_Store
+
+# Local secrets — never commit (holds VSCE_PAT / OVSX_PAT etc.)
+.env
+.env.*
+
+# Extracted audio cache (created in user workspaces, not this repo)
+.vscode-md-video-cache/
