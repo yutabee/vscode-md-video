@@ -13,5 +13,8 @@
     "forceConsistentCasingInFileNames": true
   },
   "include": ["src"],
-  "exclude": ["node_modules", "out", "dist"]
+  // src/webview is bundled by esbuild (build:preview) and type-checked via
+  // tsconfig.webview.json; exclude it here so tsc does not emit the unused
+  // out/webview output (which would otherwise ship in the VSIX).
+  "exclude": ["node_modules", "out", "dist", "src/webview"]
 }
