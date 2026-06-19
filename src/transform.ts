@@ -321,6 +321,93 @@ export function audioSrcFor(videoSrc: string, audioExt = 'mp3'): string {
   return path.replace(/\.[^./\\]*$/, `.${ext}`);
 }
 
+// Read the src of a single <video …> opening tag held in one html_inline token.
+// markdown-it emits each raw inline tag as its own token, so the token content
+// is exactly one tag. Returns undefined when it is not a bare <video> open tag.
+function videoOpenTagSrc(content: string): string | undefined {
+  const tag = content.trim();
+  if (!isVideoOpenTagStart(tag, 0)) {
+    return undefined;
+  }
+
+  const tagEnd = findTagEnd(tag, 0);
+  if (tagEnd !== tag.length - 1) {
+    return undefined;
+  }
+
+  return readVideoSrcAttribute(tag);
+}
+
+function isVideoCloseTagToken(content: string): boolean {
+  return /^<\/video\s*>$/i.test(content.trim());
+}
+
+// Promote a paragraph whose entire meaningful content is one or more local
+// <video> elements into a sequence of player blocks. Anything else (text mixed
+// in, a non-local video, an unbalanced tag) leaves the paragraph untouched so
+// markdown-it renders it normally.
+function renderVideoParagraph(
+  children: Token[],
+  md: MarkdownIt,
+  audioExt: string,
+): string | undefined {
+  const blocks: string[] = [];
+  let index = 0;
+
+  while (index < children.length) {
+    const child = children[index];
+    if (isWhitespaceOnlyText(child)) {
+      index += 1;
+      continue;
+    }
+
+    if (child.type !== 'html_inline') {
+      return undefined;
+    }
+
+    const src = videoOpenTagSrc(child.content);
+    if (src === undefined || classifyVideoSrc(src) !== 'local-video') {
+      return undefined;
+    }
+
+    let close = index + 1;
+    while (
+      close < children.length &&
+      !(children[close].type === 'html_inline' && isVideoCloseTagToken(children[close].content))
+    ) {
+      close += 1;
+    }
+    if (close >= children.length) {
+      return undefined;
+    }
+
+    blocks.push(renderPlayerBlock(md, src, audioExt));
+    index = close + 1;
+  }
+
+  return blocks.length > 0 ? blocks.join('') : undefined;
+}
+
+// Decide how to render a paragraph that may be media-only: a single
+// ![](clip.mp4) image, or one or more raw <video> elements. Returns player
+// block markup, or undefined to leave the paragraph as markdown-it rendered it.
+function renderParagraphMedia(
+  inline: Token,
+  md: MarkdownIt,
+  audioExt: string,
+): string | undefined {
+  const image = onlyChildImageToken(inline);
+  if (image) {
+    const src = image.attrGet('src');
+    if (src && classifyVideoSrc(src) === 'local-video') {
+      return renderPlayerBlock(md, src, audioExt);
+    }
+    return undefined;
+  }
+
+  return renderVideoParagraph(inline.children ?? [], md, audioExt);
+}
+
 // Register markdown-it rules that rewrite local video references (both
 // <video src="..."> raw HTML and ![](clip.mp4) image syntax) into the player
 // block contract documented in test/transform.test.ts. Returns the same md.
@@ -331,28 +418,27 @@ export function applyVideoAudioRules(md: MarkdownIt, opts: VideoAudioOptions = {
 
   const audioExt = normalizeAudioExt(opts.audioExt ?? 'mp3');
   const defaultHtmlBlock = md.renderer.rules.html_block;
-  const defaultHtmlInline = md.renderer.rules.html_inline;
 
-  const renderHtml = (
+  // Block-level raw HTML (e.g. a multi-line <video>…</video>) arrives as one
+  // html_block token whose content holds the whole element, so rewriting it in
+  // place is safe — no orphan close tag, and it already renders outside any <p>.
+  // Single-line inline <video> tags are handled by the core ruler below instead:
+  // markdown-it splits them into separate html_inline tokens, so rewriting at
+  // render time would leak a </video> and nest the player <div> inside a <p>.
+  md.renderer.rules.html_block = (
     tokens: Token[],
     idx: number,
     options: MarkdownIt.Options,
     env: unknown,
     self: Renderer,
   ): string => {
-    const token = tokens[idx];
-    const content = rewriteVideoHtml(token.content, md, audioExt);
-
+    const content = rewriteVideoHtml(tokens[idx].content, md, audioExt);
     if (content !== undefined) {
       return content;
     }
 
-    const defaultRule = token.type === 'html_inline' ? defaultHtmlInline : defaultHtmlBlock;
-    return renderDefault(defaultRule, tokens, idx, options, env, self);
+    return renderDefault(defaultHtmlBlock, tokens, idx, options, env, self);
   };
-
-  md.renderer.rules.html_block = renderHtml;
-  md.renderer.rules.html_inline = renderHtml;
 
   md.core.ruler.after('inline', 'mdva_player', (state: StateCore) => {
     const tokens = state.tokens;
@@ -368,9 +454,8 @@ export function applyVideoAudioRules(md: MarkdownIt, opts: VideoAudioOptions = {
         continue;
       }
 
-      const image = onlyChildImageToken(inline);
-      const src = image?.attrGet('src');
-      if (!src || classifyVideoSrc(src) !== 'local-video') {
+      const content = renderParagraphMedia(inline, md, audioExt);
+      if (content === undefined) {
         continue;
       }
 
@@ -378,7 +463,7 @@ export function applyVideoAudioRules(md: MarkdownIt, opts: VideoAudioOptions = {
       token.block = true;
       token.map = paragraphOpen.map;
       token.level = paragraphOpen.level;
-      token.content = renderPlayerBlock(md, src, audioExt);
+      token.content = content;
       tokens.splice(index, 3, token);
     }
   });
