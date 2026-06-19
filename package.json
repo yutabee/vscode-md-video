@@ -25,11 +25,11 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "MP4/MOV audio is extracted with ffmpeg only in trusted workspaces; videos stay muted until then. WebM plays with native audio."
+      "description": "Renders local MP4/MOV as a muted video paired with a sibling audio track, reading only local files already in the workspace. Automatic ffmpeg extraction (which will run only in trusted workspaces) is planned, not yet active. WebM plays with native audio."
     },
     "virtualWorkspaces": {
       "supported": false,
-      "description": "Playback needs a real on-disk file path and a local ffmpeg."
+      "description": "Playback needs a real on-disk file path for the video and its sibling audio (and, once added, a local ffmpeg)."
     }
   },
   "categories": [
