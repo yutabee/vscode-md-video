@@ -131,7 +131,6 @@ function bindPlayer(player: HTMLElement): VideoAudioBinding | undefined {
     }
 
     showError(player, 'Audio playback failed. Check that the sibling audio file can be loaded.', error);
-    console.error('[markdown-video-audio] audio.play() rejected', error);
   };
 
   const syncAndPlay = (): void => {
