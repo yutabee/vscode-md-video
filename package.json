@@ -102,7 +102,7 @@
     "build:preview": "esbuild src/webview/inject.ts --bundle --format=iife --outfile=dist/preview/inject.js",
     "build": "npm run compile && npm run build:preview",
     "watch": "tsc -watch -p ./",
-    "lint": "eslint src",
+    "lint": "eslint src test",
     "pretest": "tsc -p ./tsconfig.test.json",
     "test": "node --test \"out-test/test/**/*.test.js\"",
     "vscode:prepublish": "npm run clean && npm run build"
