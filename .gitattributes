@@ -1,0 +1,6 @@
+# Normalize line endings to LF for all text files (the extension emits HTML and
+# the tests compare strings, so consistent EOLs matter across platforms).
+* text=auto eol=lf
+
+# Generated; collapse in diffs and exclude from language stats.
+package-lock.json linguist-generated=true
