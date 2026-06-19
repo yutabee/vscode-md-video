@@ -1,45 +1,101 @@
 # Markdown Video Audio
 
-Play MP4/MOV videos embedded in the VS Code **Markdown preview** with sound.
+Play MP4/MOV videos embedded in the VS Code **Markdown preview** — with sound.
 
-The VS Code webview has no AAC codec, so videos in the Markdown preview play silent
-(microsoft/vscode#181616, closed as-designed). This extension extracts the audio with
-ffmpeg and keeps it in sync with the muted video, so embedded videos actually play with sound.
+The VS Code webview ships no AAC decoder, so MP4/MOV videos in the Markdown
+preview play silent ([microsoft/vscode#181616](https://github.com/microsoft/vscode/issues/181616),
+closed as by-design). This extension rewrites those videos at render time into a
+**muted `<video>` paired with a sibling `<audio>`** and keeps the two in sync, so
+embedded clips actually play with sound.
 
 ## Status
 
-Early development. The design is specified but not yet implemented — the first step is an
-**M0 feasibility spike** verifying that a Markdown-relative `<audio>` element resolves to a
-webview resource and plays under the built-in preview's default Content-Security-Policy.
+Early development (v0.0.x). What works today:
 
-See the design spec (in the planning repo) for the architecture, ADRs, and acceptance criteria.
+- Render-time rewrite of local `<video src="…">` and `![](clip.mp4)` references
+  (MP4/MOV) into a muted-video + sibling-audio player.
+- Play / pause / seek / playback-rate sync with drift correction between the
+  video and its audio, in the built-in Markdown preview.
 
-## How it works (planned)
+Not yet implemented: **automatic audio extraction.** Until then you place the
+sibling audio file yourself — see [Current limitation](#current-limitation).
+ffmpeg-based extraction and the settings that depend on it are planned (see
+[Settings](#settings)).
 
-- `extendMarkdownIt` rewrites `<video>` tags and bare `.mp4`/`.mov` links during render,
-  embedding a Markdown-relative `<audio>` source and `data-*` status attributes.
-- The preview script (`markdown.previewScripts`) reads those attributes and keeps the hidden
-  `<audio>` in sync with the muted `<video>`.
-- Audio is extracted to a cache directory inside the workspace (so it stays within the
-  preview's `localResourceRoots`).
+## Usage
 
-Communication is one-way: the extension host embeds everything the preview needs at render time;
-the preview script never messages back (the built-in preview is not an extension-owned webview).
+Reference a local video in any Markdown file, using either raw HTML or image
+syntax:
+
+```markdown
+<video src="clip.mp4" controls></video>
+
+![](clip2.mp4)
+```
+
+Open the Markdown preview (`Ctrl+Shift+V` / `⇧⌘V`). Each MP4/MOV becomes a player
+whose audio plays from the sibling track while the video stays muted. WebM videos
+are left untouched — the webview decodes their audio natively.
+
+## Current limitation
+
+Automatic extraction is not built yet, so the audio file must already exist next
+to the video: for `clip.mp4`, place `clip.mp3` in the same folder. The audio must
+live inside the workspace so the preview is allowed to load it. Once ffmpeg
+extraction lands, this manual step goes away.
+
+## How it works
+
+- `extendMarkdownIt` rewrites local `<video>` tags and `![](…)` MP4/MOV image
+  references during render, emitting a muted `<video>`, a sibling `<audio>`, and
+  `data-*` status attributes.
+- The preview script (`markdown.previewScripts`) reads those attributes and keeps
+  the hidden `<audio>` in sync with the muted `<video>`.
+
+Communication is one-way: the extension host embeds everything the preview needs
+at render time; the preview script never messages back (the built-in preview is
+not an extension-owned webview).
 
 ## Requirements
 
-- ffmpeg on PATH, or set `markdownVideoAudio.ffmpegPath`.
+- VS Code 1.90 or newer.
+- ffmpeg — _planned._ Once automatic extraction lands it must be on `PATH` or set
+  via `markdownVideoAudio.ffmpegPath`. It is not used yet.
 
 ## Settings
 
-| Setting | Default | Description |
-|---|---|---|
-| `markdownVideoAudio.enabled` | `true` | Enable audio playback for preview videos. |
-| `markdownVideoAudio.ffmpegPath` | `""` | Path to ffmpeg. Empty = search PATH. |
-| `markdownVideoAudio.autoplay` | `false` | Autoplay (muted) when the preview opens. |
-| `markdownVideoAudio.maxSyncDriftMs` | `250` | Max audio/video drift before correction (ms). |
-| `markdownVideoAudio.cacheDirName` | `.vscode-md-video-cache` | Cache dir name under the workspace. |
+| Setting | Default | Status | Description |
+|---|---|---|---|
+| `markdownVideoAudio.enabled` | `true` | active | Enable the video/audio rewrite in the Markdown preview. |
+| `markdownVideoAudio.ffmpegPath` | `""` | reserved | Path to ffmpeg for automatic extraction (planned). Empty = search `PATH`. |
+| `markdownVideoAudio.autoplay` | `false` | reserved | Autoplay (muted) when the preview opens (planned). |
+| `markdownVideoAudio.maxSyncDriftMs` | `250` | reserved | Target max audio/video drift before correction. Currently fixed at 250 ms. |
+| `markdownVideoAudio.cacheDirName` | `.vscode-md-video-cache` | reserved | Folder for the extracted-audio cache (planned). |
+
+_reserved_ settings are declared for upcoming milestones and have no effect yet.
+
+## Develop / try it locally
+
+```bash
+git clone https://github.com/yutabee/vscode-md-video.git
+cd vscode-md-video
+npm install
+npm run build
+```
+
+Press <kbd>F5</kbd> to launch an Extension Development Host, then open
+`test/fixtures/spike.md` and its Markdown preview. The fixture needs sibling
+audio files placed by hand — see [SPIKE.md](./SPIKE.md) for the manual check.
+
+| Script | What it does |
+|---|---|
+| `npm run build` | Compile the extension (`tsc`) and bundle the preview script (`esbuild`). |
+| `npm run watch` | Recompile the extension on change. |
+| `npm test` | Run the transform unit tests (`node:test`). |
+| `npm run lint` | Lint the sources and tests. |
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full workflow.
 
 ## License
 
-[MIT](./LICENSE.md)
+[MIT](./LICENSE.md) © yutabee
