@@ -99,8 +99,9 @@
   "scripts": {
     "clean": "node -e \"const fs=require('fs');fs.rmSync('out',{recursive:true,force:true});fs.rmSync('dist',{recursive:true,force:true})\"",
     "compile": "tsc -p ./",
+    "typecheck:webview": "tsc -p tsconfig.webview.json",
     "build:preview": "esbuild src/webview/inject.ts --bundle --format=iife --outfile=dist/preview/inject.js",
-    "build": "npm run compile && npm run build:preview",
+    "build": "npm run compile && npm run typecheck:webview && npm run build:preview",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src test",
     "pretest": "tsc -p ./tsconfig.test.json",
