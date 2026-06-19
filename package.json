@@ -52,6 +52,7 @@
     "mute",
     "unmute"
   ],
+  "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
     "markdown.previewScripts": [
@@ -102,7 +103,8 @@
     "watch": "tsc -watch -p ./",
     "lint": "eslint src",
     "pretest": "tsc -p ./tsconfig.test.json",
-    "test": "node --test \"out-test/test/**/*.test.js\""
+    "test": "node --test \"out-test/test/**/*.test.js\"",
+    "vscode:prepublish": "npm run clean && npm run build"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
