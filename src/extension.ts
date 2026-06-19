@@ -1,4 +1,5 @@
 import type MarkdownIt from 'markdown-it';
+import * as vscode from 'vscode';
 import { applyVideoAudioRules } from './transform';
 
 // Extension entry. The Markdown preview calls extendMarkdownIt() to let us
@@ -14,7 +15,11 @@ import { applyVideoAudioRules } from './transform';
 export function activate(): { extendMarkdownIt(md: MarkdownIt): MarkdownIt } {
   return {
     extendMarkdownIt(md: MarkdownIt): MarkdownIt {
-      return applyVideoAudioRules(md);
+      const config = vscode.workspace.getConfiguration('markdownVideoAudio');
+      const enabled = config.get<boolean>('enabled', true);
+      const audioExt = config.get<string>('audioExt');
+
+      return applyVideoAudioRules(md, { enabled, audioExt });
     },
   };
 }

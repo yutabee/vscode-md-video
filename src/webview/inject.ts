@@ -14,6 +14,8 @@ interface VideoAudioBinding {
   dispose(): void;
 }
 
+const bindings = new Map<HTMLElement, VideoAudioBinding>();
+
 const statusLabels: Record<string, string> = {
   preparing: 'Preparing audio',
   'no-audio': 'No audio',
@@ -21,13 +23,26 @@ const statusLabels: Record<string, string> = {
   error: 'Audio error',
 };
 
+function errorName(error: unknown): string | undefined {
+  if (error instanceof DOMException) {
+    return error.name;
+  }
+
+  if (typeof error === 'object' && error !== null && 'name' in error) {
+    const name = error.name;
+    return typeof name === 'string' ? name : undefined;
+  }
+
+  return undefined;
+}
+
 function syncCurrentTime(video: HTMLVideoElement, audio: HTMLAudioElement): void {
   if (Math.abs(audio.currentTime - video.currentTime) > maxSyncDriftMs / 1000) {
     audio.currentTime = video.currentTime;
   }
 }
 
-function showError(player: HTMLElement, message: string, error?: Event): void {
+function showError(player: HTMLElement, message: string, error?: unknown): void {
   player.dataset.mdvaStatus = 'error';
   let errorEl = player.querySelector<HTMLElement>('.mdva-error');
   if (!errorEl) {
@@ -73,15 +88,59 @@ function bindPlayer(player: HTMLElement): VideoAudioBinding | undefined {
   player.dataset.mdvaBound = '1';
   ensureStatusBadge(player);
 
+  let autoplayRetryArmed = false;
+  let autoplayRetryUsed = false;
+
+  const retryAutoplay = (): void => {
+    disarmAutoplayRetry();
+    if (!video.paused && !video.ended) {
+      syncAndPlay();
+    }
+  };
+
+  const disarmAutoplayRetry = (): void => {
+    if (!autoplayRetryArmed) {
+      return;
+    }
+
+    autoplayRetryArmed = false;
+    video.removeEventListener('play', retryAutoplay);
+    document.removeEventListener('pointerdown', retryAutoplay);
+  };
+
+  const armAutoplayRetry = (): void => {
+    if (autoplayRetryArmed || autoplayRetryUsed) {
+      return;
+    }
+
+    autoplayRetryArmed = true;
+    autoplayRetryUsed = true;
+    video.addEventListener('play', retryAutoplay, { once: true });
+    document.addEventListener('pointerdown', retryAutoplay, { once: true });
+  };
+
+  const handlePlayRejected = (error: unknown): void => {
+    const name = errorName(error);
+    if (name === 'NotAllowedError') {
+      armAutoplayRetry();
+      return;
+    }
+
+    if (name === 'AbortError') {
+      return;
+    }
+
+    showError(player, 'Audio playback failed. Check that the sibling audio file can be loaded.', error);
+    console.error('[markdown-video-audio] audio.play() rejected', error);
+  };
+
   const syncAndPlay = (): void => {
     syncCurrentTime(video, audio);
-    audio.play().catch((error: unknown) => {
-      showError(player, 'Audio playback failed. Check that the sibling audio file can be loaded.', error instanceof Event ? error : undefined);
-      console.error('[markdown-video-audio] audio.play() rejected', error);
-    });
+    audio.play().catch(handlePlayRejected);
   };
 
   const pauseAudio = (): void => {
+    disarmAutoplayRetry();
     audio.pause();
   };
 
@@ -125,6 +184,7 @@ function bindPlayer(player: HTMLElement): VideoAudioBinding | undefined {
       video.removeEventListener('seeking', seekAudio);
       video.removeEventListener('timeupdate', correctDrift);
       video.removeEventListener('ratechange', updateRate);
+      disarmAutoplayRetry();
       audio.removeEventListener('error', reportAudioError);
       video.removeEventListener('error', reportVideoError);
       delete player.dataset.mdvaBound;
@@ -132,10 +192,24 @@ function bindPlayer(player: HTMLElement): VideoAudioBinding | undefined {
   };
 }
 
-function bindAll(root: ParentNode): VideoAudioBinding[] {
-  return Array.from(root.querySelectorAll<HTMLElement>('[data-mdva="1"]'))
-    .map(bindPlayer)
-    .filter((binding): binding is VideoAudioBinding => binding !== undefined);
+function bindAll(root: ParentNode): void {
+  for (const [player, binding] of bindings) {
+    if (!player.isConnected) {
+      binding.dispose();
+      bindings.delete(player);
+    }
+  }
+
+  for (const player of root.querySelectorAll<HTMLElement>('[data-mdva="1"]')) {
+    if (bindings.has(player)) {
+      continue;
+    }
+
+    const binding = bindPlayer(player);
+    if (binding) {
+      bindings.set(player, binding);
+    }
+  }
 }
 
 // The built-in preview re-renders the body on edit; bind idempotently.
