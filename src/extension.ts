@@ -17,9 +17,8 @@ export function activate(): { extendMarkdownIt(md: MarkdownIt): MarkdownIt } {
     extendMarkdownIt(md: MarkdownIt): MarkdownIt {
       const config = vscode.workspace.getConfiguration('markdownVideoAudio');
       const enabled = config.get<boolean>('enabled', true);
-      const audioExt = config.get<string>('audioExt');
 
-      return applyVideoAudioRules(md, { enabled, audioExt });
+      return applyVideoAudioRules(md, { enabled });
     },
   };
 }
