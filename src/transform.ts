@@ -3,6 +3,7 @@ import type Renderer from 'markdown-it/lib/renderer.mjs';
 import type { RenderRule } from 'markdown-it/lib/renderer.mjs';
 import type StateCore from 'markdown-it/lib/rules_core/state_core.mjs';
 import type Token from 'markdown-it/lib/token.mjs';
+import { classifyMediaFormat } from './media/mediaFormat';
 
 // Render-time transform that turns local video references into a muted <video>
 // paired with a sibling <audio> element, so the built-in Markdown preview can
@@ -287,11 +288,13 @@ function rewriteVideoHtml(content: string, md: MarkdownIt, audioExt: string): st
 }
 
 // Classify a video src so the transform knows whether to rewrite it.
-//   - local-video : local .mp4 / .mov (rewritten to muted video + sibling audio)
+//   - local-video : local needs-sidecar container (.mp4 / .mov / .m4v),
+//                   rewritten to muted video + sibling audio
 //   - webm        : local .webm (passes through; the webview decodes its audio)
 //   - remote      : http(s):// or protocol-relative URL (passes through)
 //   - not-video   : anything else, including unsafe local-looking paths
-// Case-insensitive on the extension; ignores ?query and #hash for extension checks.
+// Remote/safety/query-hash concerns stay here; the extension-to-format decision
+// is delegated to src/media/mediaFormat.ts. Case-insensitive on the extension.
 export function classifyVideoSrc(src: string): VideoSrcKind {
   if (isRemoteSrc(src)) {
     return 'remote';
@@ -301,12 +304,12 @@ export function classifyVideoSrc(src: string): VideoSrcKind {
     return 'not-video';
   }
 
-  const path = stripQueryAndHash(src).toLowerCase();
-  if (path.endsWith('.mp4') || path.endsWith('.mov')) {
+  const format = classifyMediaFormat(stripQueryAndHash(src));
+  if (format === 'needs-sidecar') {
     return 'local-video';
   }
 
-  if (path.endsWith('.webm')) {
+  if (format === 'native-audio') {
     return 'webm';
   }
 
