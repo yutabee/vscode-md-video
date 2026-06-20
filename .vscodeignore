@@ -9,6 +9,7 @@ out-test/**
 eslint.config.mjs
 SPIKE.md
 CONTRIBUTING.md
+icon.svg
 
 .github/**
 .vscode/**

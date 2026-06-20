@@ -16,6 +16,7 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   drift between the muted video and its sibling audio.
 - Settings scaffold: `enabled` (active); `ffmpegPath`, `autoplay`,
   `maxSyncDriftMs`, `cacheDirName` (reserved for upcoming milestones).
+- Extension icon for the Marketplace listing.
 
 ### Known limitations
 
