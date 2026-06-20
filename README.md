@@ -1,6 +1,8 @@
 # Markdown Video Audio
 
 [![CI](https://github.com/yutabee/vscode-md-video/actions/workflows/ci.yml/badge.svg)](https://github.com/yutabee/vscode-md-video/actions/workflows/ci.yml)
+[![VS Code Marketplace](https://vsmarketplacebadges.dev/version-short/yutabee.markdown-video-audio.svg)](https://marketplace.visualstudio.com/items?itemName=yutabee.markdown-video-audio)
+[![Open VSX](https://img.shields.io/open-vsx/v/yutabee/markdown-video-audio?label=Open%20VSX)](https://open-vsx.org/extension/yutabee/markdown-video-audio)
 
 Play MP4/MOV/M4V videos embedded in the VS Code **Markdown preview** — with sound.
 
