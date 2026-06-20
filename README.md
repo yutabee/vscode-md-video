@@ -2,6 +2,8 @@
 
 Play MP4/MOV videos embedded in the VS Code **Markdown preview** — with sound.
 
+![A clip playing with sound inside the VS Code Markdown preview](https://raw.githubusercontent.com/yutabee/vscode-md-video/main/images/demo.gif)
+
 The VS Code webview ships no AAC decoder, so MP4/MOV videos in the Markdown
 preview play silent ([microsoft/vscode#181616](https://github.com/microsoft/vscode/issues/181616),
 closed as by-design). This extension rewrites those videos at render time into a
