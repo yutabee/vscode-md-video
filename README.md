@@ -1,5 +1,7 @@
 # Markdown Video Audio
 
+[![CI](https://github.com/yutabee/vscode-md-video/actions/workflows/ci.yml/badge.svg)](https://github.com/yutabee/vscode-md-video/actions/workflows/ci.yml)
+
 Play MP4/MOV/M4V videos embedded in the VS Code **Markdown preview** — with sound.
 
 ![A clip playing with sound inside the VS Code Markdown preview](https://raw.githubusercontent.com/yutabee/vscode-md-video/main/images/demo.gif)

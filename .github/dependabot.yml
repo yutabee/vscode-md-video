@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # Runtime + build dependencies. CI (build/lint/test/vsce ls) gates every PR.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Roll routine minor/patch bumps into one PR to cut review noise; majors
+      # (and security updates) still open on their own.
+      npm-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # Keep the workflow actions (checkout, setup-node, …) current; this is the
+  # ongoing answer to action-version drift in the publish pipeline.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
