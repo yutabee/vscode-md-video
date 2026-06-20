@@ -4,18 +4,28 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch: {}
 
 permissions:
   contents: read
 
+# Cancel superseded runs on the same ref (e.g. rapid pushes to a PR branch).
+# The release workflow is separate and is never cancelled mid-publish.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          # Pinned to a concrete major for reproducible builds; lts/* drifts as
+          # new LTS lines are promoted. Bump deliberately — this CI job gates it.
+          node-version: '22'
           cache: npm
       - run: npm ci
       - run: npm run build
