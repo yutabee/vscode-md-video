@@ -1,13 +1,30 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { findFfmpeg, resetFfmpegCache } from '../src/media/audio';
 import { execFileAsync } from './exec';
 
-/** Probe for a real ffmpeg (cache reset so the probe is honest). null when absent. */
+// Probe candidates kept independent of the SUT's own FFMPEG_CANDIDATES on
+// purpose: if findFfmpeg() regresses to return null, real tests must FAIL
+// (loudly), not silently self-skip because the skip decision shares the bug.
+const FFMPEG_PROBE_CANDIDATES = [
+    '/opt/homebrew/bin/ffmpeg',
+    '/usr/local/bin/ffmpeg',
+    '/usr/bin/ffmpeg',
+    '/snap/bin/ffmpeg',
+    'ffmpeg',
+];
+
+/** Probe for a real ffmpeg without going through the code under test. null when absent. */
 export async function discoverFfmpeg(): Promise<string | null> {
-    resetFfmpegCache();
-    return findFfmpeg();
+    for (const bin of FFMPEG_PROBE_CANDIDATES) {
+        try {
+            await execFileAsync(bin, ['-version'], { timeout: 5000 });
+            return bin;
+        } catch {
+            /* try the next candidate */
+        }
+    }
+    return null;
 }
 
 export async function makeAacMp4(ffmpeg: string, dir: string): Promise<string> {

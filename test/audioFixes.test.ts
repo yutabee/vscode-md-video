@@ -23,6 +23,27 @@ import {
 // #3/#4/#6 use a FAKE ffmpeg (a tiny node script) so they are deterministic and
 // need no real ffmpeg. #9 needs real ffmpeg and self-skips when absent.
 
+// The fake is a `#!/usr/bin/env node` shebang spawned as a binary, so the
+// fake-driven tests self-skip on Windows (matches test/ffmpegCache.test.ts).
+const isWindows = process.platform === 'win32';
+
+// Poll until `pid` is gone (kill(pid, 0) throws), proving the child was reaped
+// rather than left as an orphan. Throws if it is still alive after `ms`.
+async function assertReaped(pid: number, ms = 2000): Promise<void> {
+    const deadline = Date.now() + ms;
+    for (;;) {
+        try {
+            process.kill(pid, 0);
+        } catch {
+            return; // ESRCH: the child is gone
+        }
+        if (Date.now() >= deadline) {
+            throw new Error(`child pid ${pid} was not reaped within ${ms}ms`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+}
+
 let workDir = '';
 let fakeFfmpeg = '';
 const cleanup = createCleanup();
@@ -36,7 +57,8 @@ after(() => {
     cleanup.run();
 });
 
-test('#3 concurrent extractAudio for the same input runs ffmpeg only once', async () => {
+test('#3 concurrent extractAudio for the same input runs ffmpeg only once', async (t) => {
+    if (isWindows) { t.skip('fake ffmpeg relies on a unix shebang'); return; }
     const input = uniqueInput(workDir);
     const cacheDir = cleanup.track(makeTempDir('mdva-fix-dedup'));
     const counter = path.join(workDir, `cnt-${crypto.randomBytes(4).toString('hex')}`);
@@ -59,25 +81,37 @@ test('#3 concurrent extractAudio for the same input runs ffmpeg only once', asyn
     }
 });
 
-test('#4 large ffmpeg stderr does not abort extraction', async () => {
+test('#4 large ffmpeg stderr does not abort extraction', async (t) => {
+    if (isWindows) { t.skip('fake ffmpeg relies on a unix shebang'); return; }
     const input = uniqueInput(workDir);
     const cacheDir = cleanup.track(makeTempDir('mdva-fix-stderr'));
+    const sentFile = path.join(workDir, `sent-${crypto.randomBytes(4).toString('hex')}`);
     process.env.MDVA_FAKE_STDERR_MB = '4'; // >> execFile default maxBuffer (1MB)
     process.env.MDVA_FAKE_DELAY_MS = '0';
+    process.env.MDVA_FAKE_STDERR_SENT = sentFile;
     try {
         const out = await extractAudio(fakeFfmpeg, input, cacheDir);
         assert.ok(fs.existsSync(out), 'extraction completed despite large stderr');
         assert.ok(out.endsWith('.mp3'));
+        // The fake drains its writes before finishing, so this is what the parent
+        // actually consumed: proves the 16KB rolling tail absorbed a load far past
+        // execFile's 1MB maxBuffer (the regression that drove us to spawn()).
+        const sent = fs.existsSync(sentFile) ? parseInt(fs.readFileSync(sentFile, 'utf8'), 10) : 0;
+        assert.ok(sent >= 4 * 1024 * 1024, `fake should have streamed >=4MB of stderr, sent ${sent}`);
     } finally {
         delete process.env.MDVA_FAKE_STDERR_MB;
         delete process.env.MDVA_FAKE_DELAY_MS;
+        delete process.env.MDVA_FAKE_STDERR_SENT;
     }
 });
 
-test('#6 a never-exiting ffmpeg is killed by the injected timeout and leaves no usable file', async () => {
+test('#6 a never-exiting ffmpeg is killed by the injected timeout and leaves no usable file', async (t) => {
+    if (isWindows) { t.skip('fake ffmpeg relies on a unix shebang'); return; }
     const input = uniqueInput(workDir);
     const cacheDir = cleanup.track(makeTempDir('mdva-fix-timeout'));
+    const pidFile = path.join(workDir, `pid-${crypto.randomBytes(4).toString('hex')}`);
     process.env.MDVA_FAKE_HANG = '1';
+    process.env.MDVA_FAKE_PID_FILE = pidFile;
     try {
         await assert.rejects(
             () => extractAudio(fakeFfmpeg, input, cacheDir, { timeoutMs: 200 }),
@@ -87,12 +121,19 @@ test('#6 a never-exiting ffmpeg is killed by the injected timeout and leaves no 
                 return true;
             },
         );
-        // No canonical .mp3 and no leftover .part file: a partial extraction must
-        // never survive a kill for a later open to reuse.
+        // The hung fake CREATED a .part file before hanging, so this is no longer a
+        // vacuous check: the post-kill cleanup must have actually removed it. No
+        // canonical .mp3 and no leftover .part may survive for a later open.
         const entries = fs.existsSync(cacheDir) ? fs.readdirSync(cacheDir) : [];
         assert.equal(entries.length, 0, `cache dir must be empty after a killed extraction: ${entries.join(', ')}`);
+        // The child must be reaped, not orphaned: the kill path is real, not just
+        // a promise rejection that abandons a live process.
+        const pid = parseInt(fs.readFileSync(pidFile, 'utf8'), 10);
+        assert.ok(pid > 0, 'fake recorded its pid');
+        await assertReaped(pid);
     } finally {
         delete process.env.MDVA_FAKE_HANG;
+        delete process.env.MDVA_FAKE_PID_FILE;
     }
 });
 
