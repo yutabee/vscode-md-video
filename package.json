@@ -1,7 +1,7 @@
 {
   "name": "markdown-video-audio",
   "displayName": "Markdown Video Audio — play videos with sound in Markdown preview",
-  "description": "Play MP4/MOV videos embedded in the VS Code Markdown preview with sound, by pairing the muted video with a sibling audio track around the webview's missing AAC codec (automatic ffmpeg extraction planned).",
+  "description": "Play MP4/MOV/M4V videos embedded in the VS Code Markdown preview with sound, by pairing the muted video with a sibling audio track around the webview's missing AAC codec (automatic ffmpeg extraction planned).",
   "version": "0.0.1",
   "preview": true,
   "icon": "icon.png",
@@ -26,7 +26,7 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "Renders local MP4/MOV as a muted video paired with a sibling audio track, reading only local files already in the workspace. Automatic ffmpeg extraction (which will run only in trusted workspaces) is planned, not yet active. WebM plays with native audio."
+      "description": "Renders local MP4/MOV/M4V as a muted video paired with a sibling audio track, reading only local files already in the workspace. Automatic ffmpeg extraction (which will run only in trusted workspaces) is planned, not yet active. WebM plays with native audio."
     },
     "virtualWorkspaces": {
       "supported": false,
@@ -45,6 +45,7 @@
     "audio",
     "mp4",
     "mov",
+    "m4v",
     "no sound",
     "no audio",
     "aac",

@@ -1,10 +1,10 @@
 # Markdown Video Audio
 
-Play MP4/MOV videos embedded in the VS Code **Markdown preview** — with sound.
+Play MP4/MOV/M4V videos embedded in the VS Code **Markdown preview** — with sound.
 
 ![A clip playing with sound inside the VS Code Markdown preview](https://raw.githubusercontent.com/yutabee/vscode-md-video/main/images/demo.gif)
 
-The VS Code webview ships no AAC decoder, so MP4/MOV videos in the Markdown
+The VS Code webview ships no AAC decoder, so MP4/MOV/M4V videos in the Markdown
 preview play silent ([microsoft/vscode#181616](https://github.com/microsoft/vscode/issues/181616),
 closed as by-design). This extension rewrites those videos at render time into a
 **muted `<video>` paired with a sibling `<audio>`** and keeps the two in sync, so
@@ -15,7 +15,7 @@ embedded clips actually play with sound.
 Early development (v0.0.x). What works today:
 
 - Render-time rewrite of local `<video src="…">` and `![](clip.mp4)` references
-  (MP4/MOV) into a muted-video + sibling-audio player.
+  (MP4/MOV/M4V) into a muted-video + sibling-audio player.
 - Play / pause / seek / playback-rate sync with drift correction between the
   video and its audio, in the built-in Markdown preview.
 
@@ -35,7 +35,7 @@ syntax:
 ![](clip2.mp4)
 ```
 
-Open the Markdown preview (`Ctrl+Shift+V` / `⇧⌘V`). Each MP4/MOV becomes a player
+Open the Markdown preview (`Ctrl+Shift+V` / `⇧⌘V`). Each MP4/MOV/M4V becomes a player
 whose audio plays from the sibling track while the video stays muted. WebM videos
 are left untouched — the webview decodes their audio natively.
 
@@ -48,7 +48,7 @@ extraction lands, this manual step goes away.
 
 ## How it works
 
-- `extendMarkdownIt` rewrites local `<video>` tags and `![](…)` MP4/MOV image
+- `extendMarkdownIt` rewrites local `<video>` tags and `![](…)` MP4/MOV/M4V image
   references during render, emitting a muted `<video>`, a sibling `<audio>`, and
   `data-*` status attributes.
 - The preview script (`markdown.previewScripts`) reads those attributes and keeps
