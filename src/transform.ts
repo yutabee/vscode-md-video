@@ -6,8 +6,9 @@ import type Token from 'markdown-it/lib/token.mjs';
 
 // Render-time transform that turns local video references into a muted <video>
 // paired with a sibling <audio> element, so the built-in Markdown preview can
-// play them with sound. This is the M0 spike layer: it only rewrites markup and
-// derives the sibling audio path; ffmpeg extraction and caching arrive in M2.
+// play them with sound. This layer only rewrites markup and derives the sibling
+// audio path; on-demand ffmpeg extraction (the M1 engine in src/media/audio.ts,
+// built but not yet wired) arrives in M4.
 //
 // Communication is one-way (see spec "重要な技術前提"): everything the preview
 // script needs is embedded here at render time via data-* attributes.
@@ -18,8 +19,9 @@ export interface VideoAudioOptions {
   // When disabled, leave markdown-it untouched so previously registered rules
   // keep their exact behavior.
   enabled?: boolean;
-  // Extension of the sibling audio file. M0 assumes a pre-placed file next to
-  // the video (e.g. clip.mp4 -> clip.mp3); M2 replaces this with extraction.
+  // Extension of the sibling audio file. For now a pre-placed file is assumed
+  // next to the video (e.g. clip.mp4 -> clip.mp3); M4 replaces this with
+  // on-demand extraction via the M1 engine.
   audioExt?: string;
 }
 
