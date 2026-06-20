@@ -17,3 +17,5 @@ icon.svg
 .gitattributes
 .editorconfig
 *.vsix
+.playwright-mcp/**
+signin-state.png

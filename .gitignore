@@ -11,3 +11,7 @@ dist/
 
 # Extracted audio cache (created in user workspaces, not this repo)
 .vscode-md-video-cache/
+
+# Playwright MCP session artifacts (local browser-automation logs/screenshots)
+.playwright-mcp/
+signin-state.png
