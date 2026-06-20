@@ -4,7 +4,7 @@ name: Release
 # Required repository secret (Settings -> Secrets and variables -> Actions):
 #   VSCE_PAT  Azure DevOps PAT with "Marketplace > Manage" scope (VS Code Marketplace).
 # Optional:
-#   OVSX_PAT  Open VSX token; the Open VSX step is skipped when it is unset.
+#   OVSX_PAT  Open VSX token; the Open VSX steps are skipped when it is unset.
 on:
   push:
     tags: ['v*']
@@ -12,9 +12,16 @@ on:
 permissions:
   contents: write # create the GitHub Release and upload the VSIX
 
+# Serialize publishes for the same tag; never cancel a job mid-publish (a
+# half-published tag is worse than a queued duplicate).
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       VSCE_PAT: ${{ secrets.VSCE_PAT }}
       OVSX_PAT: ${{ secrets.OVSX_PAT }}
@@ -24,7 +31,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          node-version: '22'
           cache: npm
 
       - name: Require VSCE_PAT
@@ -50,12 +57,22 @@ jobs:
       - name: Package VSIX
         run: npx vsce package --out "$VSIX"
 
+      # --skip-duplicate makes a re-run on an already-published version a no-op
+      # instead of a hard error, so the whole job is safe to re-run on one tag.
       - name: Publish to VS Code Marketplace
-        run: npx vsce publish --packagePath "$VSIX" -p "$VSCE_PAT"
+        run: npx vsce publish --packagePath "$VSIX" --skip-duplicate -p "$VSCE_PAT"
+
+      - name: Ensure Open VSX namespace exists
+        if: ${{ env.OVSX_PAT != '' }}
+        run: npx ovsx create-namespace yutabee -p "$OVSX_PAT" || true
 
       - name: Publish to Open VSX (optional)
         if: ${{ env.OVSX_PAT != '' }}
-        run: npx ovsx publish "$VSIX" -p "$OVSX_PAT"
+        run: npx ovsx publish "$VSIX" --skip-duplicate -p "$OVSX_PAT"
 
-      - name: Create GitHub Release
-        run: gh release create "$GITHUB_REF_NAME" "$VSIX" --title "$GITHUB_REF_NAME" --generate-notes
+      # Idempotent: create the Release if it does not exist, otherwise attach the
+      # VSIX to the existing one — so a re-run never fails on "release exists".
+      - name: Create or update GitHub Release
+        run: |
+          gh release create "$GITHUB_REF_NAME" "$VSIX" --title "$GITHUB_REF_NAME" --generate-notes \
+            || gh release upload "$GITHUB_REF_NAME" "$VSIX" --clobber

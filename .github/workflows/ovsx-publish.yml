@@ -21,6 +21,7 @@ permissions:
 jobs:
   ovsx:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       OVSX_PAT: ${{ secrets.OVSX_PAT }}
     steps:
@@ -37,7 +38,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          node-version: '22'
           cache: npm
 
       - run: npm ci
@@ -49,4 +50,4 @@ jobs:
         run: npx ovsx create-namespace yutabee -p "$OVSX_PAT" || true
 
       - name: Publish to Open VSX
-        run: npx ovsx publish extension.vsix -p "$OVSX_PAT"
+        run: npx ovsx publish extension.vsix --skip-duplicate -p "$OVSX_PAT"
