@@ -1,0 +1,52 @@
+name: Publish to Open VSX
+
+# Manually publish an already-released tag to Open VSX (https://open-vsx.org).
+# The main release workflow auto-publishes to Open VSX on new tags once
+# OVSX_PAT is set; this dispatch covers backfilling tags released before that.
+# Required repository secret (Settings -> Secrets and variables -> Actions):
+#   OVSX_PAT  Open VSX access token (https://open-vsx.org/user-settings/tokens).
+#             The publisher namespace must be claimed and the Eclipse
+#             Foundation Publisher Agreement signed before publishing succeeds.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Released tag to publish (e.g. v0.0.1)'
+        required: true
+        default: v0.0.1
+
+permissions:
+  contents: read
+
+jobs:
+  ovsx:
+    runs-on: ubuntu-latest
+    env:
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
+    steps:
+      - name: Require OVSX_PAT
+        run: |
+          if [ -z "$OVSX_PAT" ]; then
+            echo "::error::OVSX_PAT secret is not set (Settings -> Secrets and variables -> Actions)." >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - run: npm ci
+
+      - name: Package VSIX
+        run: npx vsce package --out extension.vsix
+
+      - name: Ensure Open VSX namespace exists
+        run: npx ovsx create-namespace yutabee -p "$OVSX_PAT" || true
+
+      - name: Publish to Open VSX
+        run: npx ovsx publish extension.vsix -p "$OVSX_PAT"
