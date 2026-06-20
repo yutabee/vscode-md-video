@@ -7,6 +7,8 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [0.0.1] - 2026-06-20
+
 ### Added
 
 - M0 spike: render-time rewrite of local MP4/MOV references — both
@@ -23,4 +25,5 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - Automatic ffmpeg audio extraction is not implemented yet; a sibling audio file
   (e.g. `clip.mp3` next to `clip.mp4`) must be placed by hand.
 
-[Unreleased]: https://github.com/yutabee/vscode-md-video/commits/main
+[Unreleased]: https://github.com/yutabee/vscode-md-video/compare/v0.0.1...HEAD
+[0.0.1]: https://github.com/yutabee/vscode-md-video/releases/tag/v0.0.1
