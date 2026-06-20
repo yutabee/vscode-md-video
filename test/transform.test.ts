@@ -15,7 +15,7 @@ import { applyVideoAudioRules, classifyVideoSrc, audioSrcFor } from '../src/tran
 //   </div>
 //
 // Audio src is the video's sibling with the extension swapped (M0 assumes a
-// pre-placed file; M2 will extract it with ffmpeg). webm / remote / non-video
+// pre-placed file; M4 will extract it with ffmpeg). webm / remote / non-video
 // references pass through untouched.
 
 function render(input: string): string {
@@ -28,6 +28,13 @@ function render(input: string): string {
 test('classifyVideoSrc: local mp4/mov -> local-video', () => {
   assert.equal(classifyVideoSrc('clip.mp4'), 'local-video');
   assert.equal(classifyVideoSrc('a/b/clip.mov'), 'local-video');
+});
+
+test('classifyVideoSrc: local m4v -> local-video', () => {
+  assert.equal(classifyVideoSrc('clip.m4v'), 'local-video');
+  assert.equal(classifyVideoSrc('a/b/clip.m4v'), 'local-video');
+  assert.equal(classifyVideoSrc('clip.M4V'), 'local-video');
+  assert.equal(classifyVideoSrc('clip.m4v?t=1'), 'local-video');
 });
 
 test('classifyVideoSrc: extension is case-insensitive', () => {
@@ -96,6 +103,14 @@ test('transform: <video src=*.MOV> (uppercase) is rewritten', () => {
   assert.match(out, /<audio[^>]*\bsrc="clip\.mp3"/);
 });
 
+test('transform: <video src=*.m4v> becomes a player block', () => {
+  const out = render('<video src="clip.m4v" controls></video>');
+  assert.match(out, /data-mdva="1"/);
+  assert.match(out, /<video[^>]*\bmuted\b/);
+  assert.match(out, /<video[^>]*\bsrc="clip\.m4v"/);
+  assert.match(out, /<audio[^>]*\bsrc="clip\.mp3"/);
+});
+
 // --- transform: image syntax ------------------------------------------------
 
 test('transform: ![](clip.mp4) image syntax becomes a player block', () => {
@@ -103,6 +118,13 @@ test('transform: ![](clip.mp4) image syntax becomes a player block', () => {
   assert.match(out, /data-mdva="1"/);
   assert.match(out, /<video[^>]*\bmuted\b/);
   assert.match(out, /<video[^>]*\bsrc="clip\.mp4"/);
+  assert.match(out, /<audio[^>]*\bsrc="clip\.mp3"/);
+});
+
+test('transform: ![](clip.m4v) image syntax becomes a player block', () => {
+  const out = render('![](clip.m4v)');
+  assert.match(out, /data-mdva="1"/);
+  assert.match(out, /<video[^>]*\bsrc="clip\.m4v"/);
   assert.match(out, /<audio[^>]*\bsrc="clip\.mp3"/);
 });
 
@@ -146,11 +168,15 @@ test('classifyVideoSrc: rejects absolute / UNC / drive paths as not-video', () =
   assert.equal(classifyVideoSrc('/abs/path.mp4'), 'not-video');
   assert.equal(classifyVideoSrc('\\\\host\\share\\a.mp4'), 'not-video');
   assert.equal(classifyVideoSrc('C:\\dir\\a.mp4'), 'not-video');
+  // M2: the safety gate must fire before .m4v format classification too.
+  assert.equal(classifyVideoSrc('/abs/x.m4v'), 'not-video');
 });
 
 test('classifyVideoSrc: rejects traversal segments as not-video', () => {
   assert.equal(classifyVideoSrc('../secret.mp4'), 'not-video');
   assert.equal(classifyVideoSrc('dir/../a.mp4'), 'not-video');
+  // M2: .m4v must not widen the attack surface past isSafeRelativeSrc.
+  assert.equal(classifyVideoSrc('../secret.m4v'), 'not-video');
 });
 
 test('classifyVideoSrc: rejects control characters as not-video', () => {
