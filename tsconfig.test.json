@@ -12,6 +12,6 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/transform.ts", "test"],
+  "include": ["src/transform.ts", "src/media/audio.ts", "test", "test-support"],
   "exclude": ["node_modules", "out", "out-test", "dist", "src/webview"]
 }
