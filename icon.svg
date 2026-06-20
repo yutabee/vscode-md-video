@@ -1,0 +1,16 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="128" y2="128" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7C5CFF"/>
+      <stop offset="1" stop-color="#2563EB"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+  <!-- play triangle: the "video" -->
+  <path d="M36 38 L36 90 L78 64 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round"/>
+  <!-- sound waves emanating right: the "audio" -->
+  <g stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" fill="none">
+    <path d="M84 50 A16 16 0 0 1 84 78" opacity="0.95"/>
+    <path d="M94 42 A27 27 0 0 1 94 86" opacity="0.6"/>
+  </g>
+</svg>

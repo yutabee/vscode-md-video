@@ -4,6 +4,7 @@
   "description": "Play MP4/MOV videos embedded in the VS Code Markdown preview with sound, by pairing the muted video with a sibling audio track around the webview's missing AAC codec (automatic ffmpeg extraction planned).",
   "version": "0.0.1",
   "preview": true,
+  "icon": "icon.png",
   "publisher": "yutabee",
   "license": "MIT",
   "repository": {
