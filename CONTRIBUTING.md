@@ -43,6 +43,36 @@ npm test        # node:test transform unit tests
   changes.
 - Open the pull request against `main`; CI must pass before merge.
 
+## Releasing (maintainers)
+
+Publishing is automated by
+[`.github/workflows/release.yml`](./.github/workflows/release.yml), which runs
+when a `v*` tag is pushed.
+
+One-time setup — add repository secrets (Settings → Secrets and variables →
+Actions):
+
+- `VSCE_PAT` — Azure DevOps PAT with the **Marketplace → Manage** scope, for the
+  VS Code Marketplace. The publisher must already exist at
+  <https://marketplace.visualstudio.com/manage>.
+- `OVSX_PAT` — Open VSX token (optional; the Open VSX step is skipped if unset).
+
+To cut a release:
+
+1. Bump `version` in `package.json` and move the `CHANGELOG.md` entries from
+   `## [Unreleased]` into a new version section.
+2. Commit, open a PR, and merge to `main`.
+3. Tag the merge commit and push the tag:
+
+   ```bash
+   git tag v0.0.1
+   git push origin v0.0.1
+   ```
+
+The workflow then verifies the tag matches `package.json`, packages the VSIX,
+publishes to the Marketplace (and Open VSX when configured), and attaches the
+VSIX to a GitHub Release.
+
 ## Architecture in one minute
 
 - `src/transform.ts` — render-time markdown-it transform: classifies video
