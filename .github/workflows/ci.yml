@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           # Pinned to a concrete major for reproducible builds; lts/* drifts as
           # new LTS lines are promoted. Bump deliberately — this CI job gates it.
