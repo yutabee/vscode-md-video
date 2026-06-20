@@ -73,6 +73,15 @@ The workflow then verifies the tag matches `package.json`, packages the VSIX,
 publishes to the Marketplace (and Open VSX when configured), and attaches the
 VSIX to a GitHub Release.
 
+### Open VSX
+
+To also publish to [Open VSX](https://open-vsx.org), sign in there, sign the
+Eclipse Foundation Publisher Agreement, claim the `yutabee` namespace, create an
+access token, and add it as the `OVSX_PAT` repository secret. New tags then
+publish to Open VSX automatically. To backfill a tag released before the secret
+existed, run the **Publish to Open VSX** workflow manually (Actions → run
+workflow → enter the tag).
+
 ## Architecture in one minute
 
 - `src/transform.ts` — render-time markdown-it transform: classifies video
