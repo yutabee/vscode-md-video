@@ -1,0 +1,34 @@
+.mdva-player {
+  position: relative;
+  margin: 1em 0;
+}
+
+.mdva-video {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.mdva-audio {
+  display: none;
+}
+
+.mdva-status,
+.mdva-error {
+  margin-top: 0.5rem;
+  font-size: 0.85em;
+  line-height: 1.4;
+}
+
+.mdva-status {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--vscode-badge-background);
+  border-radius: 4px;
+  color: var(--vscode-badge-foreground);
+  background: var(--vscode-badge-background);
+}
+
+.mdva-error {
+  color: var(--vscode-errorForeground);
+}

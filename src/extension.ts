@@ -1,4 +1,6 @@
 import type MarkdownIt from 'markdown-it';
+import * as vscode from 'vscode';
+import { applyVideoAudioRules } from './transform';
 
 // Extension entry. The Markdown preview calls extendMarkdownIt() to let us
 // rewrite video tokens at render time.
@@ -13,9 +15,10 @@ import type MarkdownIt from 'markdown-it';
 export function activate(): { extendMarkdownIt(md: MarkdownIt): MarkdownIt } {
   return {
     extendMarkdownIt(md: MarkdownIt): MarkdownIt {
-      // TODO(M1): register a rule that rewrites local video tokens into a
-      // muted <video> + status data-* + md-relative <audio>.
-      return md;
+      const config = vscode.workspace.getConfiguration('markdownVideoAudio');
+      const enabled = config.get<boolean>('enabled', true);
+
+      return applyVideoAudioRules(md, { enabled });
     },
   };
 }

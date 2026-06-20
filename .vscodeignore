@@ -1,0 +1,18 @@
+# Keep the VSIX to runtime output + metadata only.
+# vsce already drops node_modules devDeps and **/*.ts; these are the rest.
+
+src/**
+test/**
+out-test/**
+**/*.map
+**/tsconfig*.json
+eslint.config.mjs
+SPIKE.md
+CONTRIBUTING.md
+
+.github/**
+.vscode/**
+.gitignore
+.gitattributes
+.editorconfig
+*.vsix
