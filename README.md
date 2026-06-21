@@ -22,11 +22,10 @@ Early development (v0.0.x). What works today:
   (MP4/MOV/M4V) into a muted-video + sibling-audio player.
 - Play / pause / seek / playback-rate sync with drift correction between the
   video and its audio, in the built-in Markdown preview.
-
-Not yet implemented: **automatic audio extraction.** Until then you place the
-sibling audio file yourself — see [Current limitation](#current-limitation).
-ffmpeg-based extraction and the settings that depend on it are planned (see
-[Settings](#settings)).
+- **Automatic audio extraction with ffmpeg.** On first preview the player shows a
+  "Preparing audio" badge while ffmpeg extracts the track to a workspace cache;
+  the preview refreshes itself once it finishes and the clip plays — no sibling
+  file to place by hand. See [Automatic extraction](#automatic-extraction).
 
 ## Usage
 
@@ -43,12 +42,20 @@ Open the Markdown preview (`Ctrl+Shift+V` / `⇧⌘V`). Each MP4/MOV/M4V becomes
 whose audio plays from the sibling track while the video stays muted. WebM videos
 are left untouched — the webview decodes their audio natively.
 
-## Current limitation
+## Automatic extraction
 
-Automatic extraction is not built yet, so the audio file must already exist next
-to the video: for `clip.mp4`, place `clip.mp3` in the same folder. The audio must
-live inside the workspace so the preview is allowed to load it. Once ffmpeg
-extraction lands, this manual step goes away.
+When you open the preview in a **trusted workspace** with `ffmpeg` on `PATH`, the
+extension extracts each video's audio automatically into a
+`.vscode-md-video-cache/` folder next to the Markdown file (inside the workspace,
+so the preview is allowed to load it). The first render shows a status badge while
+ffmpeg runs; when it settles the preview refreshes and the clip plays. The cache
+is content-addressed, so editing a video re-extracts.
+
+Extraction is skipped — and the extension falls back to a **sibling audio file**
+(`clip.mp4` → `clip.mp3` placed next to the video) — when it cannot apply: an
+untrusted workspace, a Markdown file opened outside any workspace folder, ffmpeg
+not found, or a video with no audio track. The status badge reports which case
+applies (`No audio`, `ffmpeg not found`, `Audio error`).
 
 ## How it works
 
@@ -65,18 +72,20 @@ not an extension-owned webview).
 ## Requirements
 
 - VS Code 1.90 or newer.
-- ffmpeg — _planned._ Once automatic extraction lands it must be on `PATH` or set
-  via `markdownVideoAudio.ffmpegPath`. It is not used yet.
+- ffmpeg on `PATH` for automatic extraction. Without it the extension falls back
+  to a manually placed sibling audio file (see
+  [Automatic extraction](#automatic-extraction)). A configurable ffmpeg path is
+  planned (see [Settings](#settings)).
 
 ## Settings
 
 | Setting | Default | Status | Description |
 |---|---|---|---|
 | `markdownVideoAudio.enabled` | `true` | active | Enable the video/audio rewrite in the Markdown preview. |
-| `markdownVideoAudio.ffmpegPath` | `""` | reserved | Path to ffmpeg for automatic extraction (planned). Empty = search `PATH`. |
+| `markdownVideoAudio.ffmpegPath` | `""` | reserved | Path to ffmpeg for extraction. Empty = search `PATH`. The override is not wired yet; extraction currently always searches `PATH`. |
 | `markdownVideoAudio.autoplay` | `false` | reserved | Autoplay (muted) when the preview opens (planned). |
 | `markdownVideoAudio.maxSyncDriftMs` | `250` | reserved | Target max audio/video drift before correction. Currently fixed at 250 ms. |
-| `markdownVideoAudio.cacheDirName` | `.vscode-md-video-cache` | reserved | Folder for the extracted-audio cache (planned). |
+| `markdownVideoAudio.cacheDirName` | `.vscode-md-video-cache` | reserved | Folder for the extracted-audio cache. The override is not wired yet; the cache dir name is currently fixed. |
 
 _reserved_ settings are declared for upcoming milestones and have no effect yet.
 
@@ -90,8 +99,9 @@ npm run build
 ```
 
 Press <kbd>F5</kbd> to launch an Extension Development Host, then open
-`test/fixtures/spike.md` and its Markdown preview. The fixture needs sibling
-audio files placed by hand — see [SPIKE.md](./SPIKE.md) for the manual check.
+`test/fixtures/spike.md` and its Markdown preview. With `ffmpeg` on `PATH` and the
+workspace trusted, the audio extracts automatically — see [SPIKE.md](./SPIKE.md)
+for the manual check (and the sibling-file fallback).
 
 | Script | What it does |
 |---|---|
