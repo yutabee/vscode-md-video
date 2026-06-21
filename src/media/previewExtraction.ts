@@ -73,6 +73,12 @@ function isRegularFile(p: string): boolean {
   }
 }
 
+/** Whether `err` is an expected "file is missing / not a directory" fs error. */
+function isMissingFileError(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  return code === 'ENOENT' || code === 'ENOTDIR';
+}
+
 /**
  * Build the driver. Owns the per-target extraction state (keyed by cache path,
  * so editing a video — which changes its content-addressed cache path — retries
@@ -97,9 +103,19 @@ export function createExtractionDriver(): ExtractionDriver {
     }
     refreshTimer = setTimeout(() => {
       refreshTimer = undefined;
-      // Swallow rejection: the command can reject during shutdown or if no
-      // preview is open, and an unhandled rejection would surface as an error.
-      Promise.resolve(vscode.commands.executeCommand('markdown.preview.refresh')).then(undefined, () => {});
+      // The debounce window can elapse across a dispose(); don't fire the refresh
+      // post-deactivate.
+      if (disposed) {
+        return;
+      }
+      // executeCommand can reject (shutdown / no preview open) — an unhandled
+      // rejection would surface as an error — and can also throw synchronously
+      // during shutdown; swallow both, there is nothing to refresh in that case.
+      try {
+        Promise.resolve(vscode.commands.executeCommand('markdown.preview.refresh')).then(undefined, () => {});
+      } catch {
+        /* shutting down or command unavailable — nothing to refresh */
+      }
     }, REFRESH_DEBOUNCE_MS);
     // Never let a pending refresh keep the host's event loop alive on its own.
     refreshTimer.unref();
@@ -183,7 +199,21 @@ export function createExtractionDriver(): ExtractionDriver {
       }
 
       const cachePath = cachePathFor(videoPath, cacheDir);
-      const { status, kick } = decidePlayback(isRegularFile(cachePath), extractionState.get(cachePath));
+      // B: a cache path that exists only as a symlink is anomalous — we only ever
+      // rename a real regular file into place. Don't serve it (it could redirect
+      // the read outside the workspace) and don't loop re-kicking extraction (the
+      // engine would no-op on its existsSync); fall back to the sibling instead.
+      if (isSymlink(cachePath)) {
+        return undefined;
+      }
+      const cacheExists = isRegularFile(cachePath);
+      // H: a present cache file is authoritative, so forget any stale terminal
+      // state (e.g. a past error/no-audio) for it — otherwise, were the file later
+      // deleted, that stale state would resurface and block a fresh re-kick.
+      if (cacheExists) {
+        extractionState.delete(cachePath);
+      }
+      const { status, kick } = decidePlayback(cacheExists, extractionState.get(cachePath));
       if (kick) {
         startExtraction(videoPath, cacheDir, cachePath);
       }
@@ -192,8 +222,14 @@ export function createExtractionDriver(): ExtractionDriver {
       // (the transform emits no src attribute, the webview shows a status badge).
       const audioSrc = status === 'ready' ? `${CACHE_DIR_NAME}/${path.basename(cachePath)}` : '';
       return { audioSrc, status };
-    } catch {
-      // Any fs/path failure (missing file, race) -> fall back to M0 sibling.
+    } catch (err) {
+      // realpathSync/statSync throwing for a missing file or a race legitimately
+      // falls back to the M0 sibling. Surface anything else (an actual bug or an
+      // unexpected env shape) so it isn't silently masked as a sibling render —
+      // the user still gets the fallback, but the failure leaves a trace.
+      if (!isMissingFileError(err)) {
+        console.error('[markdown-video-audio] unexpected audio-resolve failure', err);
+      }
       return undefined;
     }
   };
