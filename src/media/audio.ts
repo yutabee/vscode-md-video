@@ -14,7 +14,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { execFile, spawn } from 'child_process';
+import { spawn } from 'child_process';
 
 const FFMPEG_CANDIDATES = [
     '/opt/homebrew/bin/ffmpeg',
@@ -27,6 +27,11 @@ const STDERR_TAIL_LIMIT = 16 * 1024;
 // After a timeout SIGTERM, wait this long before escalating to SIGKILL so a
 // child that ignores SIGTERM cannot linger as an orphan.
 const SIGKILL_GRACE_MS = 2000;
+// Default `ffmpeg -version` probe timeout. Injected (shortened) by tests. A probe
+// that ignores SIGTERM is force-killed after SIGKILL_GRACE_MS and the promise is
+// settled immediately, so findFfmpeg always resolves — a wedged probe must never
+// pin a caller's extraction at the 'extracting' state.
+const PROBE_TIMEOUT_MS = 5000;
 
 const probeResults = new Map<string, string | null>();
 const probeInFlight = new Map<string, Promise<string | null>>();
@@ -50,17 +55,17 @@ export function resetFfmpegCache(): void {
  * works, else it falls back to the default search. The result (including a `null`
  * "not found") is cached, and concurrent identical lookups dedupe to one probe.
  */
-export function findFfmpeg(override?: string): Promise<string | null> {
+export function findFfmpeg(override?: string, probeTimeoutMs: number = PROBE_TIMEOUT_MS): Promise<string | null> {
     const overridePath = typeof override === 'string' ? override.trim() : '';
     if (overridePath === '') {
-        return memoizedProbe('', probeDefaultFfmpeg);
+        return memoizedProbe('', () => probeDefaultFfmpeg(probeTimeoutMs));
     }
 
     return memoizedProbe(overridePath, async () => {
-        if (await probeFfmpeg(overridePath)) {
+        if (await probeFfmpeg(overridePath, probeTimeoutMs)) {
             return overridePath;
         }
-        return findFfmpeg();
+        return findFfmpeg(undefined, probeTimeoutMs);
     });
 }
 
@@ -255,18 +260,60 @@ function memoizedProbe(key: string, compute: () => Promise<string | null>): Prom
     return promise;
 }
 
-async function probeDefaultFfmpeg(): Promise<string | null> {
+async function probeDefaultFfmpeg(probeTimeoutMs: number): Promise<string | null> {
     for (const bin of FFMPEG_CANDIDATES) {
-        if (await probeFfmpeg(bin)) {
+        if (await probeFfmpeg(bin, probeTimeoutMs)) {
             return bin;
         }
     }
     return null;
 }
 
-function probeFfmpeg(bin: string): Promise<boolean> {
+function probeFfmpeg(bin: string, timeoutMs: number): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
-        execFile(bin, ['-version'], { timeout: 5000 }, (err) => resolve(!err));
+        let settled = false;
+        let killTimer: NodeJS.Timeout | undefined;
+
+        let child: ReturnType<typeof spawn>;
+        try {
+            // spawn with an arg array (no shell) so the bin path can't inject a
+            // command; stdio ignored — we only care about the exit status.
+            child = spawn(bin, ['-version'], { stdio: 'ignore' });
+        } catch {
+            // Synchronous spawn failure (e.g. EACCES): treat as a failed probe.
+            resolve(false);
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            child.kill('SIGTERM');
+            // Settle NOW regardless of whether the child honors SIGTERM; a probe
+            // that hangs must not pin findFfmpeg (and so a caller's extraction)
+            // forever. Escalate to SIGKILL after a grace so it can't orphan.
+            killTimer = setTimeout(() => child.kill('SIGKILL'), SIGKILL_GRACE_MS);
+            killTimer.unref();
+            finish(false);
+        }, timeoutMs);
+        timer.unref();
+
+        const finish = (ok: boolean): void => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            clearTimeout(timer);
+            resolve(ok);
+        };
+
+        child.on('error', () => finish(false));
+        child.on('close', (code) => {
+            // The child exited (and was reaped); cancel any pending SIGKILL.
+            if (killTimer) {
+                clearTimeout(killTimer);
+                killTimer = undefined;
+            }
+            finish(code === 0);
+        });
     });
 }
 

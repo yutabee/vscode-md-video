@@ -90,6 +90,25 @@ export function makeProbeFake(dir: string, name: string, exitCode: number): Prob
     };
 }
 
+// A fake ffmpeg whose `-version` probe records the call, then ignores SIGTERM and
+// never exits — so findFfmpeg's probe must time out, force-kill it, and still
+// settle. Proves a wedged probe can't pin the lookup forever. Unix-only.
+export function makeHangingProbeFake(dir: string, name: string): ProbeFake {
+    const counter = path.join(dir, `${name}.count`);
+    const bin = path.join(dir, name);
+    const script =
+        '#!/usr/bin/env node\n' +
+        `require('fs').appendFileSync(${JSON.stringify(counter)}, 'x');\n` +
+        // Swallow SIGTERM so only the probe's SIGKILL backstop can reap us.
+        "process.on('SIGTERM', () => {});\n" +
+        'setInterval(() => {}, 1 << 30);\n';
+    fs.writeFileSync(bin, script, { mode: 0o755 });
+    return {
+        bin,
+        probeCount: () => (fs.existsSync(counter) ? fs.readFileSync(counter, 'utf8').length : 0),
+    };
+}
+
 export function uniqueInput(dir: string): string {
     // Unique content => unique (size+mtime+path) cache key => no cross-test cache hit.
     const p = path.join(dir, `in-${crypto.randomBytes(6).toString('hex')}.mp4`);
