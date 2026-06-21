@@ -169,11 +169,16 @@ export function createExtractionDriver(): ExtractionDriver {
         return undefined;
       }
 
-      const cacheDir = path.join(docDir, CACHE_DIR_NAME);
-      // S3: refuse to write through a pre-existing symlinked cache directory; it
-      // could redirect the extracted file outside the workspace. A real dir (or
-      // a not-yet-created path) is fine — the engine mkdirs it 0o700.
-      if (isSymlink(cacheDir)) {
+      // A: the extractor WRITES under cacheDir, so the write target gets the same
+      // canonical + boundary discipline videoPath gets for the read above —
+      // previously only the read path was validated. docDir holds the document so
+      // it exists; canonicalize it (a symlinked document folder must not redirect
+      // the cache outside the workspace) and confirm the cache dir stays within
+      // root before we ever mkdir/write there.
+      const cacheDir = path.join(fs.realpathSync(docDir), CACHE_DIR_NAME);
+      // S3: also refuse a cacheDir that is itself a pre-existing symlink — the
+      // boundary check above canonicalizes the parent, this catches the leaf.
+      if (!isPathWithinRoots(cacheDir, [root]) || isSymlink(cacheDir)) {
         return undefined;
       }
 
