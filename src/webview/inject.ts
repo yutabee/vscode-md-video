@@ -5,8 +5,7 @@
 // the extension host back.
 
 import './inject.css';
-
-const maxSyncDriftMs = 250;
+import { DEFAULT_DRIFT_TUNING, canResumeAudio, driftAction, isBenignPlayError, shouldCorrectDrift } from './sync';
 
 interface VideoAudioBinding {
   video: HTMLVideoElement;
@@ -36,8 +35,11 @@ function errorName(error: unknown): string | undefined {
   return undefined;
 }
 
-function syncCurrentTime(video: HTMLVideoElement, audio: HTMLAudioElement): void {
-  if (Math.abs(audio.currentTime - video.currentTime) > maxSyncDriftMs / 1000) {
+// Discrete-event hard-align: snap audio to the video clock when the two have
+// drifted past the soft band (used when resuming play, before continuous
+// nudging takes over). A deliberate seek aligns unconditionally — see seekAudio.
+function alignAudio(video: HTMLVideoElement, audio: HTMLAudioElement): void {
+  if (Math.abs(audio.currentTime - video.currentTime) > DEFAULT_DRIFT_TUNING.soft) {
     audio.currentTime = video.currentTime;
   }
 }
@@ -120,13 +122,13 @@ function bindPlayer(player: HTMLElement): VideoAudioBinding | undefined {
   };
 
   const handlePlayRejected = (error: unknown): void => {
-    const name = errorName(error);
+    const name = errorName(error) ?? '';
     if (name === 'NotAllowedError') {
       armAutoplayRetry();
       return;
     }
 
-    if (name === 'AbortError') {
+    if (isBenignPlayError(name)) {
       return;
     }
 
@@ -134,7 +136,14 @@ function bindPlayer(player: HTMLElement): VideoAudioBinding | undefined {
   };
 
   const syncAndPlay = (): void => {
-    syncCurrentTime(video, audio);
+    alignAudio(video, audio);
+    // Defer until the audio has buffered enough: play() on an unbuffered or
+    // mid-seek element tends to stall or reject and then re-drift on recovery.
+    // The 'canplay' handler resumes once it settles.
+    if (!canResumeAudio(audio.readyState, audio.seeking)) {
+      return;
+    }
+
     audio.play().catch(handlePlayRejected);
   };
 
@@ -144,14 +153,49 @@ function bindPlayer(player: HTMLElement): VideoAudioBinding | undefined {
   };
 
   const seekAudio = (): void => {
+    // A seek is a deliberate jump: align exactly, then let timeupdate re-nudge.
     audio.currentTime = video.currentTime;
   };
 
   const correctDrift = (): void => {
-    syncCurrentTime(video, audio);
+    // Continuous correction: nudge audio.playbackRate for small drift, hard-seek
+    // only when too far apart. Never hard-set currentTime every frame (that
+    // flushes the decode buffer and causes audible dropouts) — see sync.ts.
+    // Skip while paused or mid-seek so we don't re-seek a deferred/seeking audio
+    // element and stall its readiness recovery (the 'canplay'/'seeked' handlers
+    // resume it instead).
+    if (!shouldCorrectDrift(audio.paused, video.paused, audio.seeking, video.seeking)) {
+      return;
+    }
+
+    const baseRate = video.playbackRate;
+    const action = driftAction(audio.currentTime, video.currentTime, baseRate);
+    switch (action.kind) {
+      case 'rate':
+        audio.playbackRate = action.playbackRate;
+        break;
+      case 'seek':
+        audio.currentTime = action.to;
+        if (audio.playbackRate !== baseRate) {
+          audio.playbackRate = baseRate;
+        }
+        break;
+      case 'none':
+        if (audio.playbackRate !== baseRate) {
+          audio.playbackRate = baseRate;
+        }
+        break;
+    }
+  };
+
+  const resumeWhenAudioReady = (): void => {
+    if (!video.paused && !video.ended) {
+      syncAndPlay();
+    }
   };
 
   const updateRate = (): void => {
+    // User changed speed: reset audio to the base rate; correctDrift re-nudges.
     audio.playbackRate = video.playbackRate;
   };
 
@@ -169,6 +213,13 @@ function bindPlayer(player: HTMLElement): VideoAudioBinding | undefined {
   video.addEventListener('seeking', seekAudio);
   video.addEventListener('timeupdate', correctDrift);
   video.addEventListener('ratechange', updateRate);
+  // Resume after the audio settles. 'canplay' covers cold buffering; 'seeked'
+  // covers an align/seek that completed while already buffered (where 'canplay'
+  // does not re-fire) — without it a deferred play strands the audio silent;
+  // 'playing' covers stall recovery.
+  audio.addEventListener('canplay', resumeWhenAudioReady);
+  audio.addEventListener('seeked', resumeWhenAudioReady);
+  audio.addEventListener('playing', resumeWhenAudioReady);
   audio.addEventListener('error', reportAudioError);
   video.addEventListener('error', reportVideoError);
   updateRate();
@@ -184,6 +235,9 @@ function bindPlayer(player: HTMLElement): VideoAudioBinding | undefined {
       video.removeEventListener('timeupdate', correctDrift);
       video.removeEventListener('ratechange', updateRate);
       disarmAutoplayRetry();
+      audio.removeEventListener('canplay', resumeWhenAudioReady);
+      audio.removeEventListener('seeked', resumeWhenAudioReady);
+      audio.removeEventListener('playing', resumeWhenAudioReady);
       audio.removeEventListener('error', reportAudioError);
       video.removeEventListener('error', reportVideoError);
       delete player.dataset.mdvaBound;
