@@ -4,6 +4,10 @@ import type { RenderRule } from 'markdown-it/lib/renderer.mjs';
 import type StateCore from 'markdown-it/lib/rules_core/state_core.mjs';
 import type Token from 'markdown-it/lib/token.mjs';
 import { classifyMediaFormat } from './media/mediaFormat';
+import type { AudioResolution, AudioResolver } from './media/playbackDecision';
+
+/** Resolve the audio for one already-classified local video src (env bound). */
+type BoundResolver = (videoSrc: string) => AudioResolution;
 
 // Render-time transform that turns local video references into a muted <video>
 // paired with a sibling <audio> element, so the built-in Markdown preview can
@@ -20,10 +24,15 @@ export interface VideoAudioOptions {
   // When disabled, leave markdown-it untouched so previously registered rules
   // keep their exact behavior.
   enabled?: boolean;
-  // Extension of the sibling audio file. For now a pre-placed file is assumed
-  // next to the video (e.g. clip.mp4 -> clip.mp3); M4 replaces this with
-  // on-demand extraction via the M1 engine.
+  // Extension of the sibling audio file used by the default resolver (e.g.
+  // clip.mp4 -> clip.mp3).
   audioExt?: string;
+  // M4: resolve the <audio> src + player status for a local video at render
+  // time. The extension injects a resolver that checks the extracted-audio cache
+  // and kicks ffmpeg on a miss. When omitted, the default resolver assumes a
+  // pre-placed sibling file (the M0 behavior), keeping this layer pure and
+  // unit-testable without the host.
+  resolveAudio?: AudioResolver;
 }
 
 function stripQueryAndHash(src: string): string {
@@ -60,6 +69,18 @@ function isSafeRelativeSrc(src: string): boolean {
     return false;
   }
 
+  // Reject percent-encoding in the path. We validate the src as a literal
+  // filesystem-relative path, but the webview resolves <video src>/<audio src>
+  // with WHATWG URL semantics, which decode `%2e%2e` -> `..` and `%2f` -> `/`
+  // and then normalize — so an encoded `%2e%2e/secret.mp4` would climb out of
+  // the document directory even though the literal-`..` check below cannot see
+  // it. Forbidding `%` keeps the path we validate identical to the path the
+  // webview resolves. Query/hash (which may legitimately contain `%`) are
+  // already stripped above.
+  if (path.includes('%')) {
+    return false;
+  }
+
   return !path.split('/').includes('..');
 }
 
@@ -67,16 +88,21 @@ function normalizeAudioExt(audioExt: string): string {
   return audioExt.replace(/^\.+/, '') || 'mp3';
 }
 
-function renderPlayerBlock(md: MarkdownIt, videoSrc: string, audioExt: string): string {
+function renderPlayerBlock(md: MarkdownIt, videoSrc: string, resolve: BoundResolver): string {
   const cleanVideoSrc = videoSrc.trim();
-  const audioSrc = audioSrcFor(cleanVideoSrc, audioExt);
+  const { audioSrc, status } = resolve(cleanVideoSrc);
   const escapedVideoSrc = md.utils.escapeHtml(cleanVideoSrc);
   const escapedAudioSrc = md.utils.escapeHtml(audioSrc);
+  // Only a ready resolution carries a loadable src. For preparing/no-audio/
+  // error the <audio> stays srcless so it never fires a load error while the
+  // status badge explains the state; a later preview refresh re-renders with a
+  // ready status once extraction settles.
+  const audioSrcAttr = audioSrc ? ` src="${escapedAudioSrc}"` : '';
 
   return [
-    `<div class="mdva-player" data-mdva="1" data-mdva-status="ready" data-mdva-audio="${escapedAudioSrc}">`,
+    `<div class="mdva-player" data-mdva="1" data-mdva-status="${status}" data-mdva-audio="${escapedAudioSrc}">`,
     `<video class="mdva-video" src="${escapedVideoSrc}" muted controls preload="metadata"></video>`,
-    `<audio class="mdva-audio" src="${escapedAudioSrc}" preload="auto"></audio>`,
+    `<audio class="mdva-audio"${audioSrcAttr} preload="auto"></audio>`,
     '</div>',
   ].join('');
 }
@@ -244,7 +270,7 @@ function findVideoCloseEnd(value: string, start: number): number | undefined {
   return undefined;
 }
 
-function rewriteVideoHtml(content: string, md: MarkdownIt, audioExt: string): string | undefined {
+function rewriteVideoHtml(content: string, md: MarkdownIt, resolve: BoundResolver): string | undefined {
   let rewritten = false;
   let output = '';
   let index = 0;
@@ -279,7 +305,7 @@ function rewriteVideoHtml(content: string, md: MarkdownIt, audioExt: string): st
     }
 
     const replacementEnd = findVideoCloseEnd(content, tagEnd + 1) ?? tagEnd + 1;
-    output += renderPlayerBlock(md, src, audioExt);
+    output += renderPlayerBlock(md, src, resolve);
     index = replacementEnd;
     rewritten = true;
   }
@@ -354,7 +380,7 @@ function isVideoCloseTagToken(content: string): boolean {
 function renderVideoParagraph(
   children: Token[],
   md: MarkdownIt,
-  audioExt: string,
+  resolve: BoundResolver,
 ): string | undefined {
   const blocks: string[] = [];
   let index = 0;
@@ -386,7 +412,7 @@ function renderVideoParagraph(
       return undefined;
     }
 
-    blocks.push(renderPlayerBlock(md, src, audioExt));
+    blocks.push(renderPlayerBlock(md, src, resolve));
     index = close + 1;
   }
 
@@ -399,18 +425,18 @@ function renderVideoParagraph(
 function renderParagraphMedia(
   inline: Token,
   md: MarkdownIt,
-  audioExt: string,
+  resolve: BoundResolver,
 ): string | undefined {
   const image = onlyChildImageToken(inline);
   if (image) {
     const src = image.attrGet('src');
     if (src && classifyVideoSrc(src) === 'local-video') {
-      return renderPlayerBlock(md, src, audioExt);
+      return renderPlayerBlock(md, src, resolve);
     }
     return undefined;
   }
 
-  return renderVideoParagraph(inline.children ?? [], md, audioExt);
+  return renderVideoParagraph(inline.children ?? [], md, resolve);
 }
 
 // Register markdown-it rules that rewrite local video references (both
@@ -422,6 +448,10 @@ export function applyVideoAudioRules(md: MarkdownIt, opts: VideoAudioOptions = {
   }
 
   const audioExt = normalizeAudioExt(opts.audioExt ?? 'mp3');
+  // Default resolver: the M0 sibling assumption (clip.mp4 -> clip.mp3, ready).
+  // The extension injects a real resolver that drives ffmpeg extraction.
+  const resolveAudio: AudioResolver =
+    opts.resolveAudio ?? ((videoSrc) => ({ audioSrc: audioSrcFor(videoSrc, audioExt), status: 'ready' }));
   const defaultHtmlBlock = md.renderer.rules.html_block;
 
   // Block-level raw HTML (e.g. a multi-line <video>…</video>) arrives as one
@@ -437,7 +467,8 @@ export function applyVideoAudioRules(md: MarkdownIt, opts: VideoAudioOptions = {
     env: unknown,
     self: Renderer,
   ): string => {
-    const content = rewriteVideoHtml(tokens[idx].content, md, audioExt);
+    const resolve: BoundResolver = (videoSrc) => resolveAudio(videoSrc, env);
+    const content = rewriteVideoHtml(tokens[idx].content, md, resolve);
     if (content !== undefined) {
       return content;
     }
@@ -446,6 +477,7 @@ export function applyVideoAudioRules(md: MarkdownIt, opts: VideoAudioOptions = {
   };
 
   md.core.ruler.after('inline', 'mdva_player', (state: StateCore) => {
+    const resolve: BoundResolver = (videoSrc) => resolveAudio(videoSrc, state.env);
     const tokens = state.tokens;
     for (let index = 0; index < tokens.length - 2; index += 1) {
       const paragraphOpen = tokens[index];
@@ -459,7 +491,7 @@ export function applyVideoAudioRules(md: MarkdownIt, opts: VideoAudioOptions = {
         continue;
       }
 
-      const content = renderParagraphMedia(inline, md, audioExt);
+      const content = renderParagraphMedia(inline, md, resolve);
       if (content === undefined) {
         continue;
       }

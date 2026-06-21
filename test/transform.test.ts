@@ -179,6 +179,18 @@ test('classifyVideoSrc: rejects traversal segments as not-video', () => {
   assert.equal(classifyVideoSrc('../secret.m4v'), 'not-video');
 });
 
+test('classifyVideoSrc: rejects percent-encoded traversal as not-video', () => {
+  // The webview decodes %2e%2e -> .. (and %2f -> /) with URL semantics, so an
+  // encoded path could climb out of the document dir past the literal-`..`
+  // check. The path component must reject `%` entirely.
+  assert.equal(classifyVideoSrc('%2e%2e/secret.mp4'), 'not-video');
+  assert.equal(classifyVideoSrc('a/%2e%2e/secret.mp4'), 'not-video');
+  assert.equal(classifyVideoSrc('..%2fsecret.mp4'), 'not-video');
+  assert.equal(classifyVideoSrc('a%2fb.mp4'), 'not-video');
+  // A legitimate query may still carry `%` (only the path is restricted).
+  assert.equal(classifyVideoSrc('clip.mp4?t=1%202'), 'local-video');
+});
+
 test('classifyVideoSrc: rejects control characters as not-video', () => {
   assert.equal(classifyVideoSrc('a\u0000.mp4'), 'not-video');
   assert.equal(classifyVideoSrc('a\nb.mp4'), 'not-video');
