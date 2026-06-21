@@ -207,21 +207,24 @@ export function isNoAudioStderr(stderr: string): boolean {
 }
 
 function normalizeResolvedPath(value: string): string {
-    let resolved = path.resolve(value);
+    const resolved = path.resolve(value);
     try {
         // Canonicalize symlinks (and, on Windows, short/namespaced aliases like
         // 8.3 names or \\?\ prefixes) so the boundary check cannot be fooled by an
         // alias that names a workspace path without sharing its textual prefix.
-        resolved = fs.realpathSync.native(resolved);
+        // realpathSync.native returns the filesystem's OWN canonical casing, so
+        // two names for the same file compare equal on a case-insensitive volume
+        // WITHOUT us folding case here — and on a case-SENSITIVE volume we must
+        // not fold, or a path differing from the root only by case (e.g. a symlink
+        // to /WS/secret.mp4 while the root is /ws) would wrongly pass containment.
+        return fs.realpathSync.native(resolved);
     } catch {
-        // The path may not exist yet; fall back to the lexically-normalized form.
-        resolved = path.normalize(resolved);
+        // The path may not exist yet (e.g. a cache file about to be written); fall
+        // back to the lexically-normalized form. A case mismatch on the fallback
+        // can only cause a benign false-negative (a legit path judged outside, so
+        // we skip extraction), never a false-positive that escapes the boundary.
+        return path.normalize(resolved);
     }
-    // macOS and Windows default to case-insensitive filesystems, so compare
-    // case-insensitively there to avoid a case-only bypass of the boundary check.
-    return process.platform === 'win32' || process.platform === 'darwin'
-        ? resolved.toLowerCase()
-        : resolved;
 }
 
 function ensureTrailingSeparator(value: string): string {
