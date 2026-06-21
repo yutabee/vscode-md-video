@@ -144,7 +144,7 @@ function bindPlayer(player: HTMLElement): VideoAudioBinding | undefined {
       return;
     }
 
-    showError(player, 'Audio playback failed. Check that the sibling audio file can be loaded.', error);
+    showError(player, 'Audio playback failed. The audio track could not be played.', error);
   };
 
   const syncAndPlay = (): void => {
@@ -212,7 +212,7 @@ function bindPlayer(player: HTMLElement): VideoAudioBinding | undefined {
   };
 
   const reportAudioError = (event: Event): void => {
-    showError(player, 'Audio failed to load. Check that the sibling audio file exists next to the video.', event);
+    showError(player, 'Audio failed to load. The audio track could not be loaded.', event);
   };
 
   const reportVideoError = (event: Event): void => {
