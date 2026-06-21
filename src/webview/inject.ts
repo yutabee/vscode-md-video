@@ -87,8 +87,20 @@ function bindPlayer(player: HTMLElement): VideoAudioBinding | undefined {
     return undefined;
   }
 
-  player.dataset.mdvaBound = '1';
   ensureStatusBadge(player);
+
+  // Only a ready player carries a loadable <audio src>. For preparing / no-audio
+  // / ffmpeg-not-found / error, show the status badge but do NOT wire sync or
+  // mark the player bound: the host kicks ffmpeg on a miss and, once it settles,
+  // refreshes the preview to re-render with status=ready — leaving the player
+  // unbound here lets that later pass bind it (whether the preview patches the
+  // element in place or replaces it).
+  const status = player.dataset.mdvaStatus ?? 'ready';
+  if (status !== 'ready') {
+    return undefined;
+  }
+
+  player.dataset.mdvaBound = '1';
 
   let autoplayRetryArmed = false;
   let autoplayRetryUsed = false;
@@ -132,7 +144,7 @@ function bindPlayer(player: HTMLElement): VideoAudioBinding | undefined {
       return;
     }
 
-    showError(player, 'Audio playback failed. Check that the sibling audio file can be loaded.', error);
+    showError(player, 'Audio playback failed. The audio track could not be played.', error);
   };
 
   const syncAndPlay = (): void => {
@@ -200,7 +212,7 @@ function bindPlayer(player: HTMLElement): VideoAudioBinding | undefined {
   };
 
   const reportAudioError = (event: Event): void => {
-    showError(player, 'Audio failed to load. Check that the sibling audio file exists next to the video.', event);
+    showError(player, 'Audio failed to load. The audio track could not be loaded.', event);
   };
 
   const reportVideoError = (event: Event): void => {
@@ -245,9 +257,24 @@ function bindPlayer(player: HTMLElement): VideoAudioBinding | undefined {
   };
 }
 
+// A binding is stale when the player wrapper survived a re-render but no longer
+// matches what we wired. The built-in preview patches the DOM in place: the same
+// wrapper can keep its identity while its status flips back (ready -> preparing
+// when the host re-kicks extraction after the video is edited) or its inner
+// <video>/<audio> elements are replaced with fresh instances. Such a binding
+// points at detached elements / a now-srcless audio and must be torn down and
+// re-evaluated, not kept alive just because the wrapper is still connected.
+function isBindingStale(player: HTMLElement, binding: VideoAudioBinding): boolean {
+  return (
+    (player.dataset.mdvaStatus ?? 'ready') !== 'ready' ||
+    player.querySelector<HTMLVideoElement>('video.mdva-video') !== binding.video ||
+    player.querySelector<HTMLAudioElement>('audio.mdva-audio') !== binding.audio
+  );
+}
+
 function bindAll(root: ParentNode): void {
   for (const [player, binding] of bindings) {
-    if (!player.isConnected) {
+    if (!player.isConnected || isBindingStale(player, binding)) {
       binding.dispose();
       bindings.delete(player);
     }

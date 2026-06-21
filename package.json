@@ -1,7 +1,7 @@
 {
   "name": "markdown-video-audio",
   "displayName": "Markdown Video Audio — play videos with sound in Markdown preview",
-  "description": "Play MP4/MOV/M4V videos embedded in the VS Code Markdown preview with sound, by pairing the muted video with a sibling audio track around the webview's missing AAC codec (automatic ffmpeg extraction planned).",
+  "description": "Play MP4/MOV/M4V videos embedded in the VS Code Markdown preview with sound, by pairing the muted video with an audio track around the webview's missing AAC codec. Extracts the audio automatically with ffmpeg.",
   "version": "0.0.1",
   "preview": true,
   "icon": "icon.png",
@@ -26,11 +26,11 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "Renders local MP4/MOV/M4V as a muted video paired with a sibling audio track, reading only local files already in the workspace. Automatic ffmpeg extraction (which will run only in trusted workspaces) is planned, not yet active. WebM plays with native audio."
+      "description": "Renders local MP4/MOV/M4V as a muted video paired with an audio track, reading only local files already in the workspace. In an untrusted workspace, automatic ffmpeg extraction is disabled and only a manually placed sibling audio file is used; trusting the workspace enables extraction. WebM plays with native audio."
     },
     "virtualWorkspaces": {
       "supported": false,
-      "description": "Playback needs a real on-disk file path for the video and its sibling audio (and, once added, a local ffmpeg)."
+      "description": "Playback needs a real on-disk file path for the video, plus a local ffmpeg to extract its audio (or a manually placed sibling audio file)."
     }
   },
   "categories": [
@@ -76,7 +76,7 @@
         "markdownVideoAudio.ffmpegPath": {
           "type": "string",
           "default": "",
-          "description": "Reserved (not yet active): path to the ffmpeg executable for automatic audio extraction. Empty = search PATH."
+          "description": "Reserved (override not yet wired): path to the ffmpeg executable for automatic audio extraction. Extraction currently always searches PATH; this override has no effect yet."
         },
         "markdownVideoAudio.autoplay": {
           "type": "boolean",
@@ -93,7 +93,7 @@
         "markdownVideoAudio.cacheDirName": {
           "type": "string",
           "default": ".vscode-md-video-cache",
-          "description": "Reserved (not yet active): directory name for the extracted-audio cache, created under the workspace (must be inside localResourceRoots)."
+          "description": "Reserved (override not yet wired): directory name for the extracted-audio cache, created under the workspace (must be inside localResourceRoots). The cache dir name is currently fixed at .vscode-md-video-cache."
         }
       }
     }

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { findFfmpeg, resetFfmpegCache } from '../src/media/audio';
-import { createCleanup, makeProbeFake, makeTempDir } from '../test-support';
+import { createCleanup, makeHangingProbeFake, makeProbeFake, makeTempDir } from '../test-support';
 
 // Characterization tests for findFfmpeg()'s caching + override/fallback paths.
 // They lock in the observable behavior of the override branch so a refactor
@@ -113,6 +113,25 @@ test('findFfmpeg(override): a failing override is probed once, then falls back t
     const result = await findFfmpeg(failing.bin);
     assert.equal(failing.probeCount(), 1, 'the failing override was actually probed');
     assert.equal(result, def, 'after the probe fails it falls back to the default result');
+});
+
+test('findFfmpeg(override): a hanging probe is force-killed and still settles', async (t) => {
+    if (isWindows) { t.skip('fake exec relies on a unix shebang'); return; }
+    workDir = workDir || cleanup.track(makeTempDir('mdva-ffmpegcache'));
+    const hang = makeHangingProbeFake(workDir, 'ffmpeg-hang.js');
+
+    resetFfmpegCache();
+    const def = await findFfmpeg();
+    resetFfmpegCache();
+    // A probe that ignores SIGTERM and never exits must NOT wedge the lookup:
+    // the injected timeout fires, the child is force-killed, the probe settles
+    // false, and the override falls back to the default result. Without the
+    // spawn + SIGKILL backstop this await would hang forever. The timeout is kept
+    // well above node's cold-start so the child reliably records its probe before
+    // being killed (yet far below the 5s production default to stay fast).
+    const result = await findFfmpeg(hang.bin, 1500);
+    assert.equal(hang.probeCount(), 1, 'the hanging override was actually probed');
+    assert.equal(result, def, 'a wedged probe falls back to the default result');
 });
 
 test.after(() => {

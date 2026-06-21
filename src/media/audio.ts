@@ -14,7 +14,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { execFile, spawn } from 'child_process';
+import { spawn } from 'child_process';
 
 const FFMPEG_CANDIDATES = [
     '/opt/homebrew/bin/ffmpeg',
@@ -27,6 +27,11 @@ const STDERR_TAIL_LIMIT = 16 * 1024;
 // After a timeout SIGTERM, wait this long before escalating to SIGKILL so a
 // child that ignores SIGTERM cannot linger as an orphan.
 const SIGKILL_GRACE_MS = 2000;
+// Default `ffmpeg -version` probe timeout. Injected (shortened) by tests. A probe
+// that ignores SIGTERM is force-killed after SIGKILL_GRACE_MS and the promise is
+// settled immediately, so findFfmpeg always resolves — a wedged probe must never
+// pin a caller's extraction at the 'extracting' state.
+const PROBE_TIMEOUT_MS = 5000;
 
 const probeResults = new Map<string, string | null>();
 const probeInFlight = new Map<string, Promise<string | null>>();
@@ -50,17 +55,17 @@ export function resetFfmpegCache(): void {
  * works, else it falls back to the default search. The result (including a `null`
  * "not found") is cached, and concurrent identical lookups dedupe to one probe.
  */
-export function findFfmpeg(override?: string): Promise<string | null> {
+export function findFfmpeg(override?: string, probeTimeoutMs: number = PROBE_TIMEOUT_MS): Promise<string | null> {
     const overridePath = typeof override === 'string' ? override.trim() : '';
     if (overridePath === '') {
-        return memoizedProbe('', probeDefaultFfmpeg);
+        return memoizedProbe('', () => probeDefaultFfmpeg(probeTimeoutMs));
     }
 
     return memoizedProbe(overridePath, async () => {
-        if (await probeFfmpeg(overridePath)) {
+        if (await probeFfmpeg(overridePath, probeTimeoutMs)) {
             return overridePath;
         }
-        return findFfmpeg();
+        return findFfmpeg(undefined, probeTimeoutMs);
     });
 }
 
@@ -93,6 +98,55 @@ export function resolveFfmpegOverride(override: string | undefined, workspaceRoo
 }
 
 /**
+ * Whether `candidate` resolves to a path inside one of `roots`, canonicalizing
+ * symlinks / case / short-name aliases first (same hardening as
+ * resolveFfmpegOverride). F4: the transform derives a video's absolute path from
+ * the Markdown document's location; this confirms that path stays within the
+ * document's allowed resource root — defense in depth on top of the
+ * relative-path allowlist in transform.classifyVideoSrc, catching e.g. a
+ * symlink inside the workspace that points outside it. Empty roots are ignored.
+ */
+export function isPathWithinRoots(candidate: string, roots: string[]): boolean {
+    const resolved = normalizeResolvedPath(candidate);
+    for (const root of roots) {
+        const trimmedRoot = root.trim();
+        if (trimmedRoot === '') {
+            continue;
+        }
+        const resolvedRoot = normalizeResolvedPath(trimmedRoot);
+        if (resolved === resolvedRoot || resolved.startsWith(ensureTrailingSeparator(resolvedRoot))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Content-addressed cache key for `input`: md5 of the path + its size + mtime,
+ * truncated to 16 hex chars. Editing a file in place changes size/mtime and so
+ * the key, which is what makes a stale cache miss instead of replaying old
+ * audio. Single source of truth shared by extractAudio and cachePathFor.
+ */
+function cacheKey(input: string): string {
+    const stat = fs.statSync(input);
+    return crypto
+        .createHash('md5')
+        .update(`${input}\0${stat.size}\0${stat.mtimeMs}`)
+        .digest('hex')
+        .slice(0, 16);
+}
+
+/**
+ * The canonical cache path `extractAudio` writes for `input` under `cacheDir`.
+ * Lets a synchronous caller (the render-time transform) name the <audio> src and
+ * check `fs.existsSync` for a cache hit before any async extraction is kicked.
+ * Throws if `input` cannot be stat'd, exactly as extractAudio does.
+ */
+export function cachePathFor(input: string, cacheDir: string): string {
+    return path.join(cacheDir, `mdva-audio-${cacheKey(input)}.mp3`);
+}
+
+/**
  * Extract the audio track of `input` into an MP3 under `cacheDir`. The output
  * name is derived from the input path AND its size+mtime, so editing a file in
  * place re-extracts instead of replaying stale audio. ffmpeg writes to a temp
@@ -105,12 +159,7 @@ export async function extractAudio(ffmpeg: string, input: string, cacheDir: stri
     // returned promise instead of throwing synchronously past the caller's
     // `.catch`. There is no `await` before the in-flight check below, so the
     // existsSync/get/set dedup sequence still runs atomically within one tick.
-    const stat = fs.statSync(input);
-    const key = crypto
-        .createHash('md5')
-        .update(`${input}\0${stat.size}\0${stat.mtimeMs}`)
-        .digest('hex')
-        .slice(0, 16);
+    const key = cacheKey(input);
     const out = path.join(cacheDir, `mdva-audio-${key}.mp3`);
 
     // Reuse a previously-extracted (complete) file if present.
@@ -163,21 +212,24 @@ export function isNoAudioStderr(stderr: string): boolean {
 }
 
 function normalizeResolvedPath(value: string): string {
-    let resolved = path.resolve(value);
+    const resolved = path.resolve(value);
     try {
         // Canonicalize symlinks (and, on Windows, short/namespaced aliases like
         // 8.3 names or \\?\ prefixes) so the boundary check cannot be fooled by an
         // alias that names a workspace path without sharing its textual prefix.
-        resolved = fs.realpathSync.native(resolved);
+        // realpathSync.native returns the filesystem's OWN canonical casing, so
+        // two names for the same file compare equal on a case-insensitive volume
+        // WITHOUT us folding case here — and on a case-SENSITIVE volume we must
+        // not fold, or a path differing from the root only by case (e.g. a symlink
+        // to /WS/secret.mp4 while the root is /ws) would wrongly pass containment.
+        return fs.realpathSync.native(resolved);
     } catch {
-        // The path may not exist yet; fall back to the lexically-normalized form.
-        resolved = path.normalize(resolved);
+        // The path may not exist yet (e.g. a cache file about to be written); fall
+        // back to the lexically-normalized form. A case mismatch on the fallback
+        // can only cause a benign false-negative (a legit path judged outside, so
+        // we skip extraction), never a false-positive that escapes the boundary.
+        return path.normalize(resolved);
     }
-    // macOS and Windows default to case-insensitive filesystems, so compare
-    // case-insensitively there to avoid a case-only bypass of the boundary check.
-    return process.platform === 'win32' || process.platform === 'darwin'
-        ? resolved.toLowerCase()
-        : resolved;
 }
 
 function ensureTrailingSeparator(value: string): string {
@@ -208,18 +260,60 @@ function memoizedProbe(key: string, compute: () => Promise<string | null>): Prom
     return promise;
 }
 
-async function probeDefaultFfmpeg(): Promise<string | null> {
+async function probeDefaultFfmpeg(probeTimeoutMs: number): Promise<string | null> {
     for (const bin of FFMPEG_CANDIDATES) {
-        if (await probeFfmpeg(bin)) {
+        if (await probeFfmpeg(bin, probeTimeoutMs)) {
             return bin;
         }
     }
     return null;
 }
 
-function probeFfmpeg(bin: string): Promise<boolean> {
+function probeFfmpeg(bin: string, timeoutMs: number): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
-        execFile(bin, ['-version'], { timeout: 5000 }, (err) => resolve(!err));
+        let settled = false;
+        let killTimer: NodeJS.Timeout | undefined;
+
+        let child: ReturnType<typeof spawn>;
+        try {
+            // spawn with an arg array (no shell) so the bin path can't inject a
+            // command; stdio ignored — we only care about the exit status.
+            child = spawn(bin, ['-version'], { stdio: 'ignore' });
+        } catch {
+            // Synchronous spawn failure (e.g. EACCES): treat as a failed probe.
+            resolve(false);
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            child.kill('SIGTERM');
+            // Settle NOW regardless of whether the child honors SIGTERM; a probe
+            // that hangs must not pin findFfmpeg (and so a caller's extraction)
+            // forever. Escalate to SIGKILL after a grace so it can't orphan.
+            killTimer = setTimeout(() => child.kill('SIGKILL'), SIGKILL_GRACE_MS);
+            killTimer.unref();
+            finish(false);
+        }, timeoutMs);
+        timer.unref();
+
+        const finish = (ok: boolean): void => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            clearTimeout(timer);
+            resolve(ok);
+        };
+
+        child.on('error', () => finish(false));
+        child.on('close', (code) => {
+            // The child exited (and was reaped); cancel any pending SIGKILL.
+            if (killTimer) {
+                clearTimeout(killTimer);
+                killTimer = undefined;
+            }
+            finish(code === 0);
+        });
     });
 }
 
