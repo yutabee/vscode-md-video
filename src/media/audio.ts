@@ -93,6 +93,55 @@ export function resolveFfmpegOverride(override: string | undefined, workspaceRoo
 }
 
 /**
+ * Whether `candidate` resolves to a path inside one of `roots`, canonicalizing
+ * symlinks / case / short-name aliases first (same hardening as
+ * resolveFfmpegOverride). F4: the transform derives a video's absolute path from
+ * the Markdown document's location; this confirms that path stays within the
+ * document's allowed resource root — defense in depth on top of the
+ * relative-path allowlist in transform.classifyVideoSrc, catching e.g. a
+ * symlink inside the workspace that points outside it. Empty roots are ignored.
+ */
+export function isPathWithinRoots(candidate: string, roots: string[]): boolean {
+    const resolved = normalizeResolvedPath(candidate);
+    for (const root of roots) {
+        const trimmedRoot = root.trim();
+        if (trimmedRoot === '') {
+            continue;
+        }
+        const resolvedRoot = normalizeResolvedPath(trimmedRoot);
+        if (resolved === resolvedRoot || resolved.startsWith(ensureTrailingSeparator(resolvedRoot))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Content-addressed cache key for `input`: md5 of the path + its size + mtime,
+ * truncated to 16 hex chars. Editing a file in place changes size/mtime and so
+ * the key, which is what makes a stale cache miss instead of replaying old
+ * audio. Single source of truth shared by extractAudio and cachePathFor.
+ */
+function cacheKey(input: string): string {
+    const stat = fs.statSync(input);
+    return crypto
+        .createHash('md5')
+        .update(`${input}\0${stat.size}\0${stat.mtimeMs}`)
+        .digest('hex')
+        .slice(0, 16);
+}
+
+/**
+ * The canonical cache path `extractAudio` writes for `input` under `cacheDir`.
+ * Lets a synchronous caller (the render-time transform) name the <audio> src and
+ * check `fs.existsSync` for a cache hit before any async extraction is kicked.
+ * Throws if `input` cannot be stat'd, exactly as extractAudio does.
+ */
+export function cachePathFor(input: string, cacheDir: string): string {
+    return path.join(cacheDir, `mdva-audio-${cacheKey(input)}.mp3`);
+}
+
+/**
  * Extract the audio track of `input` into an MP3 under `cacheDir`. The output
  * name is derived from the input path AND its size+mtime, so editing a file in
  * place re-extracts instead of replaying stale audio. ffmpeg writes to a temp
@@ -105,12 +154,7 @@ export async function extractAudio(ffmpeg: string, input: string, cacheDir: stri
     // returned promise instead of throwing synchronously past the caller's
     // `.catch`. There is no `await` before the in-flight check below, so the
     // existsSync/get/set dedup sequence still runs atomically within one tick.
-    const stat = fs.statSync(input);
-    const key = crypto
-        .createHash('md5')
-        .update(`${input}\0${stat.size}\0${stat.mtimeMs}`)
-        .digest('hex')
-        .slice(0, 16);
+    const key = cacheKey(input);
     const out = path.join(cacheDir, `mdva-audio-${key}.mp3`);
 
     // Reuse a previously-extracted (complete) file if present.
