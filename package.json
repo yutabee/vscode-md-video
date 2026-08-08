@@ -118,9 +118,9 @@
     "@types/vscode": "^1.90.0",
     "@vscode/vsce": "3.9.2",
     "esbuild": "^0.28.1",
-    "eslint": "^10.5.0",
-    "ovsx": "1.0.1",
+    "eslint": "^10.8.0",
+    "ovsx": "1.1.0",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.61.1"
+    "typescript-eslint": "^8.66.0"
   }
 }
